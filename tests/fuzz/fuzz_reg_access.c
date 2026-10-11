@@ -51,12 +51,21 @@ static int roundtrip_expect(uint16_t addr, uint8_t wire_bsb, uint16_t len)
     }
     if ((wire_bsb & 3u) == 1u) { /* socket registers */
         uint16_t i;
+        uint16_t j;
         for (i = 0; i < len; i++) {
             uint8_t off = (uint8_t)((addr + i) & 0xFFu);
             if (off == 0x01u || off == 0x02u ||   /* Sn_CR / Sn_IR */
                 off == 0x20u || off == 0x21u ||   /* Sn_TX_FSR (computed) */
                 off == 0x26u || off == 0x27u) {   /* Sn_RX_RSR (computed) */
                 return -1;
+            }
+            /* The emulator stores at off % 0x30: any aliasing pair inside
+               the span makes the roundtrip order-dependent. */
+            for (j = (uint16_t)(i + 1u); j < len; j++) {
+                uint8_t off2 = (uint8_t)((addr + j) & 0xFFu);
+                if ((off % 0x30u) == (off2 % 0x30u)) {
+                    return -1;
+                }
             }
         }
         return 1;
