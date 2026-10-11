@@ -88,4 +88,10 @@ w5500_result_t w5500_wait_reg_eq(w5500_handle_t h, uint16_t addr,
 w5500_result_t w5500_sn_exec_cmd(w5500_handle_t h, uint8_t sock_id,
                                  uint8_t cmd);
 
+/* --- fuzz-only surface (compiled in with -DW5500_TEST_HARNESS) ------- */
+#ifdef W5500_TEST_HARNESS
+/** SPI control byte: (BSB << 3) | (RWB << 2) | OM. Exposed for fuzzing. */
+uint8_t w5500_ctrl_byte(uint16_t addr, uint8_t bsb, uint8_t rwb);
+#endif
+
 #endif /* W5500_INTERNAL_H */
