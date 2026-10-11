@@ -1,0 +1,9 @@
+build/
+*.o
+*.a
+*.exe
+*.elf
+*.map
+.vscode/
+.idea/
+*.swp
