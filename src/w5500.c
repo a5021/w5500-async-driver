@@ -34,7 +34,10 @@ void w5500_unlock(w5500_handle_t h)
 /* SPI framing                                                         */
 /* ------------------------------------------------------------------ */
 
-static uint8_t w5500_ctrl_byte(uint16_t addr, uint8_t bsb, uint8_t rwb)
+#ifndef W5500_TEST_HARNESS
+static
+#endif
+uint8_t w5500_ctrl_byte(uint16_t addr, uint8_t bsb, uint8_t rwb)
 {
     (void)addr;
     return (uint8_t)(((bsb & 0x1Fu) << 3) |

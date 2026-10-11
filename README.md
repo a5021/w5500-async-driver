@@ -45,9 +45,10 @@
 ├── examples/
 │   ├── stm32f4_baremetal/  # TCP-клиент без ОС
 │   └── stm32f4_freertos/   # TCP-сервер (echo) под FreeRTOS
-├── tests/                # Юнит-тесты + эмулятор W5500 для хоста
-├── docs/                 # ТЗ стадий
-└── Makefile              # Хост-сборка ядра и тестов
+├── tests/                # Юнит-тесты + эмулятор W5500 + фазз-харнесса
+│   └── fuzz/             # 7 харнессов, corpus, словарь (см. docs/fuzzing.md)
+├── docs/                 # ТЗ стадий и инструкции
+└── Makefile              # Хост-сборка ядра, тестов и фаззинга
 ```
 
 ## Быстрый старт
@@ -110,7 +111,10 @@ int main(void)
 ```sh
 make test    # -Wall -Wextra -std=c99 -Werror, все тесты должны пройти
 make lib     # build/libw5500.a
+make fuzz-all  # 7 фазз-харнессов (Clang + libFuzzer + ASan/UBSan)
 ```
+
+Подробности фаззинга: [docs/fuzzing.md](docs/fuzzing.md).
 
 Порты `ports/stm32` и `ports/freertos` в хост-сборку не входят: им нужны
 CMSIS-заголовки устройства и заголовки FreeRTOS соответственно.

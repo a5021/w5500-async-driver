@@ -25,22 +25,26 @@ static void sreg16_set(uint8_t id, uint8_t off, uint16_t v)
     g_mock.sreg[id][(uint8_t)(off + 1u)] = (uint8_t)(v & 0xFFu);
 }
 
-static uint16_t tx_size(uint8_t id)
+/* The chip only accepts power-of-2 buffer sizes (1,2,4,8,16 KB); anything
+ * else (reachable through raw w5500_write_regs() fuzzing) falls back to the
+ * 2 KB power-on default. Without this clamp a garbage size would make the
+ * address masks index past MOCK_MAX_BUF_BYTES. */
+static uint16_t buf_size_kb(uint8_t kb)
 {
-    uint8_t kb = g_mock.sreg[id][W5500_Sn_TXBUF_SIZE];
-    if (kb == 0u) {
+    if (kb != 1u && kb != 2u && kb != 4u && kb != 8u && kb != 16u) {
         kb = 2u;
     }
     return (uint16_t)kb * 1024u;
 }
 
+static uint16_t tx_size(uint8_t id)
+{
+    return buf_size_kb(g_mock.sreg[id][W5500_Sn_TXBUF_SIZE]);
+}
+
 static uint16_t rx_size(uint8_t id)
 {
-    uint8_t kb = g_mock.sreg[id][W5500_Sn_RXBUF_SIZE];
-    if (kb == 0u) {
-        kb = 2u;
-    }
-    return (uint16_t)kb * 1024u;
+    return buf_size_kb(g_mock.sreg[id][W5500_Sn_RXBUF_SIZE]);
 }
 
 static uint16_t tx_free(uint8_t id)
