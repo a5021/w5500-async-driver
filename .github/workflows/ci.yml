@@ -9,23 +9,27 @@ on:
 jobs:
   host-tests:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
     steps:
       - uses: actions/checkout@v5
-      - name: Cache apt packages (gcc)
-        # Host GCC comes from the Ubuntu archives on every run; cache the
+      - name: Cache apt packages (host compilers)
+        # Host compilers come from the Ubuntu archives on every run; cache the
         # .debs so a stalled archive download cannot hang the job with no
         # output (seen on fuzz/clang). Self-healing: a refreshed archive
         # simply re-downloads once and re-saves.
         uses: actions/cache@v5
         with:
           path: ~/apt-debs
-          key: ${{ runner.os }}-apt-gcc-v1
-      - name: Install host GCC
+          key: ${{ runner.os }}-apt-host-v2
+      - name: Install host compilers
         # The ubuntu-latest image ships a Google Chrome apt source (as a
         # .list or deb822 .sources file) whose metadata occasionally gets a
         # Hash Sum mismatch on the CDN, failing apt-get update for every
-        # package install. Drop whatever file references it first — our tools
-        # come from the Ubuntu archives only.
+        # package install. Drop whatever file references it first - our
+        # tools come from the Ubuntu archives only.
         run: |
           mkdir -p ~/apt-debs
           sudo cp ~/apt-debs/*.deb /var/cache/apt/archives/ 2>/dev/null || true
@@ -35,12 +39,25 @@ jobs:
           # canonical archive answers. Repoint, don't delete: same content.
           sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
           for i in 1 2 3; do sudo apt-get update && break || sleep 15; done
-          sudo apt-get install -y gcc
+          sudo apt-get install -y gcc clang
           cp /var/cache/apt/archives/*.deb ~/apt-debs/ 2>/dev/null || true
       - name: Build and run the unit tests
-        run: make test
-      - name: Check the examples
-        run: make examples
+        run: make CC=${{ matrix.cc }} test
+      - name: Run the emulator demo and check the examples
+        run: make CC=${{ matrix.cc }} examples
+      - name: Coverage (gcc)
+        if: matrix.cc == 'gcc'
+        run: |
+          make clean
+          make CC=gcc CFLAGS="-g -O0 --coverage -Wall -Wextra -std=c99 -Werror" test
+          find build -name '*.gcda' -exec gcov -o build {} \; >/dev/null 2>&1 || true
+      - name: Upload coverage reports
+        if: matrix.cc == 'gcc'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: "*.gcov"
+          if-no-files-found: ignore
 
   fuzz:
     runs-on: ubuntu-latest
