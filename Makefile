@@ -14,11 +14,11 @@ CPPFLAGS = -Iinclude -Isrc
 
 BUILD    := build
 CORE_SRC := src/w5500.c src/w5500_sockets.c src/w5500_dhcp.c src/w5500_dns.c \
-            src/w5500_sntp.c
+            src/w5500_sntp.c src/w5500_modbus.c
 CORE_OBJ := $(BUILD)/w5500.o $(BUILD)/w5500_sockets.o $(BUILD)/w5500_dhcp.o \
-            $(BUILD)/w5500_dns.o $(BUILD)/w5500_sntp.o
+            $(BUILD)/w5500_dns.o $(BUILD)/w5500_sntp.o $(BUILD)/w5500_modbus.o
 
-.PHONY: all test lib clean
+.PHONY: all test lib examples clean
 
 all: test
 
@@ -46,6 +46,10 @@ $(BUILD)/w5500_sntp.o: src/w5500_sntp.c src/w5500_sntp_internal.h \
                        include/w5500_sntp.h include/w5500_sockets.h | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
+$(BUILD)/w5500_modbus.o: src/w5500_modbus.c src/w5500_modbus_internal.h \
+                         include/w5500_modbus.h include/w5500_sockets.h | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
 $(BUILD)/libw5500.a: $(CORE_OBJ)
 	ar rcs $@ $(CORE_OBJ)
 
@@ -59,9 +63,23 @@ $(BUILD)/test_protocols.exe: $(CORE_SRC) tests/test_protocols.c tests/mock_w5500
 	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests $(CORE_SRC) tests/test_protocols.c \
 	    tests/mock_w5500.c -o $@
 
-test: $(BUILD)/test_w5500.exe $(BUILD)/test_protocols.exe
+$(BUILD)/test_modbus.exe: $(CORE_SRC) tests/test_modbus.c tests/mock_w5500.c | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests $(CORE_SRC) tests/test_modbus.c \
+	    tests/mock_w5500.c -o $@
+
+test: $(BUILD)/test_w5500.exe $(BUILD)/test_protocols.exe $(BUILD)/test_modbus.exe
 	./$(BUILD)/test_w5500.exe
 	./$(BUILD)/test_protocols.exe
+	./$(BUILD)/test_modbus.exe
+
+# Firmware examples are syntax-checked only: the STM32 port needs no vendor
+# headers, so the same sources compiles on the host.
+EXAMPLE_SRC := examples/stm32f4_baremetal/main.c \
+               examples/stm32f4_dhcp_dns/main.c \
+               examples/stm32f4_modbus_server/main.c
+
+examples:
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Iports/stm32 -fsyntax-only $(EXAMPLE_SRC)
 
 clean:
 	rm -rf $(BUILD)
@@ -120,7 +138,7 @@ endef
 
 .PHONY: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
         fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns \
-        fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-all
+        fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-modbus fuzz-all
 
 $(FUZZ_OUT):
 	mkdir -p $@
@@ -185,6 +203,11 @@ fuzz-sntp: | $(FUZZ_OUT)
 	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_sntp.exe
 	$(call run_fuzz,fuzz_sntp)
 
+fuzz-modbus: | $(FUZZ_OUT)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_modbus.c $(FUZZ_SRC) \
+	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_modbus.exe
+	$(call run_fuzz,fuzz_modbus)
+
 fuzz-all: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
           fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns \
-          fuzz-dhcp-state fuzz-dns-state fuzz-sntp
+          fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-modbus
