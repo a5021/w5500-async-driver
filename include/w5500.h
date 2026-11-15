@@ -19,6 +19,12 @@ extern "C" {
 /** Expected value of the chip VERSIONR register (0x0039). */
 #define W5500_HW_VERSION            0x04u
 
+/** Library version (semantic, independent of the chip revision). */
+#define W5500_VERSION_MAJOR         0u
+#define W5500_VERSION_MINOR         5u
+#define W5500_VERSION_PATCH         0u
+#define W5500_VERSION_STRING        "0.5.0"
+
 /** Number of hardware sockets implemented by the W5500. */
 #define W5500_SOCKET_COUNT          4u
 

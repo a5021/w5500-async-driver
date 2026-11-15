@@ -1,0 +1,76 @@
+# Changelog
+
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+versioning: [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+### Added
+- SNTP client (`w5500_sntp.h`): mode-3 request, Unix time, 3 attempts 2 s
+  apart, `fuzz-sntp` harness.
+- IGMPv2 for UDP multicast: `W5500_SOCK_F_IGMP_V2` flag (Sn_MR.MC, requires
+  `W5500_SOCK_F_MULTI`).
+- `w5500_set_socket_buffers_ex()` - independent TX/RX layouts per socket.
+- Nightly `Nightly fuzz` workflow: `FUZZ_TIME=300`, corpus and crash
+  artifact uploads.
+- Modbus TCP (`w5500_modbus.h`): server for FC 3/4/6/16 with up to 4 clients
+  and a callback-based register map, plus a polling client; `fuzz-modbus`;
+  `examples/stm32f4_modbus_server`; `make examples` in CI.
+- Documentation set: `docs/architecture.md`, `docs/api.md`,
+  `docs/protocols.md`, `examples/README.md`, `ports/README.md`,
+  `CONTRIBUTING.md`.
+
+### Fixed
+- `open_ex`: Sn_MR option flags (ND/MULTI/BCASTB/MC) no longer leak into the
+  software protocol tag, which made `connect/send/listen` on a flagged socket
+  return `W5500_ERR_STATE` by mistake.
+- The Modbus client parses replies with a dedicated parser
+  (`mb_parse_response`): a reply has a different MBAP layout than a request.
+
+## [0.5.0] - 2026-11-15
+
+### Added
+- Core: `w5500_irq_pending()` and SIR-based polling - `w5500_poll()` reads
+  only sockets whose SIR summary bit is set.
+- Link events: `w5500_get_link_info()` (LNK/SPD/DPX) and
+  `w5500_set_link_cb()`; PHYCFGR is sampled when no other interrupt is
+  pending.
+- `w5500_check()` also verifies the factory RTR value;
+  `w5500_set_ping_block()`.
+- `w5500_socket_open_ex()` with no-delay/multicast/broadcast-block flags;
+  TTL/TOS, MSS, socket status, manual keep-alive probe (SEND_KEEP).
+- `W5500_ERR_BUSY`: one SEND in flight per socket.
+- `w5500_set_retransmit()`/`w5500_get_retransmit()` (RTR/RCR).
+- Optional `delay_us` platform hook - 100 us steps while waiting for Sn_CR;
+  DWT implementation in the STM32 port.
+- `w5500_set_socket_buffers()` - per-socket buffer layout.
+- DHCP client (`w5500_dhcp.h`) and DNS resolver (`w5500_dns.h`) as a
+  separate layer: no heap, tick driven, over a regular UDP socket.
+- `examples/stm32f4_dhcp_dns`: DHCP -> DNS -> TCP without an OS.
+
+### Changed
+- `send`/`sendto` error precedence: `STATE` -> `PARAM` -> `BUSY`.
+
+### Fixed
+- `fuzz-reg-access`: round-trip expectations account for socket register
+  aliasing (`off % 0x30`), found by CI.
+- `mock_w5500`: SIR is computed as the OR of per-socket `Sn_IR` (as on real
+  silicon).
+- `send(NULL, ...)` on a busy socket returns `PARAM`, not `BUSY`.
+
+### Fuzzing
+- 9 harnesses: `fuzz-dhcp` and `fuzz-dns` added, plus seeds for a DHCP
+  offer, a DNS answer and the error-precedence regression.
+
+## [0.4.0] - Stage 2
+
+### Added
+- Fuzzing: 7 libFuzzer harnesses, corpus, dictionary, ASan/UBSan modes,
+  CI (host-tests + fuzz).
+
+## [0.3.0] - Stage 1
+
+### Added
+- Asynchronous W5500 core in C99: global-free context, zero-copy,
+  non-blocking sockets with events, STM32 (bare-metal CMSIS) and FreeRTOS
+  ports, unit tests against a chip emulator.
