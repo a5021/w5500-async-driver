@@ -13,9 +13,9 @@ CFLAGS  ?= -Wall -Wextra -std=c99 -Werror -g
 CPPFLAGS = -Iinclude -Isrc
 
 BUILD    := build
-CORE_SRC := src/w5500.c src/w5500_sockets.c
-CORE_OBJ := $(BUILD)/w5500.o $(BUILD)/w5500_sockets.o
-TEST_SRC := tests/test_w5500.c tests/mock_w5500.c
+CORE_SRC := src/w5500.c src/w5500_sockets.c src/w5500_dhcp.c src/w5500_dns.c
+CORE_OBJ := $(BUILD)/w5500.o $(BUILD)/w5500_sockets.o $(BUILD)/w5500_dhcp.o \
+            $(BUILD)/w5500_dns.o
 
 .PHONY: all test lib clean
 
@@ -33,16 +33,30 @@ $(BUILD)/w5500_sockets.o: src/w5500_sockets.c src/w5500_internal.h \
                           include/w5500_sockets.h | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
+$(BUILD)/w5500_dhcp.o: src/w5500_dhcp.c src/w5500_dhcp_internal.h \
+                       include/w5500_dhcp.h include/w5500_sockets.h | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
+$(BUILD)/w5500_dns.o: src/w5500_dns.c src/w5500_dns_internal.h \
+                      include/w5500_dns.h include/w5500_sockets.h | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
 $(BUILD)/libw5500.a: $(CORE_OBJ)
 	ar rcs $@ $(CORE_OBJ)
 
 lib: $(BUILD)/libw5500.a
 
-$(BUILD)/test_w5500.exe: $(CORE_SRC) $(TEST_SRC) | $(BUILD)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests $(CORE_SRC) $(TEST_SRC) -o $@
+$(BUILD)/test_w5500.exe: $(CORE_SRC) tests/test_w5500.c tests/mock_w5500.c | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests $(CORE_SRC) tests/test_w5500.c \
+	    tests/mock_w5500.c -o $@
 
-test: $(BUILD)/test_w5500.exe
+$(BUILD)/test_protocols.exe: $(CORE_SRC) tests/test_protocols.c tests/mock_w5500.c | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests $(CORE_SRC) tests/test_protocols.c \
+	    tests/mock_w5500.c -o $@
+
+test: $(BUILD)/test_w5500.exe $(BUILD)/test_protocols.exe
 	./$(BUILD)/test_w5500.exe
+	./$(BUILD)/test_protocols.exe
 
 clean:
 	rm -rf $(BUILD)
@@ -100,7 +114,7 @@ define run_fuzz
 endef
 
 .PHONY: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
-        fuzz-net-config fuzz-context fuzz-spi-frame fuzz-all
+        fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns fuzz-all
 
 $(FUZZ_OUT):
 	mkdir -p $@
@@ -140,5 +154,15 @@ fuzz-spi-frame: | $(FUZZ_OUT)
 	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_spi_frame.exe
 	$(call run_fuzz,fuzz_spi_frame)
 
+fuzz-dhcp: | $(FUZZ_OUT)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_dhcp.c $(FUZZ_SRC) \
+	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_dhcp.exe
+	$(call run_fuzz,fuzz_dhcp)
+
+fuzz-dns: | $(FUZZ_OUT)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_dns.c $(FUZZ_SRC) \
+	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_dns.exe
+	$(call run_fuzz,fuzz_dns)
+
 fuzz-all: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
-          fuzz-net-config fuzz-context fuzz-spi-frame
+          fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns
