@@ -84,6 +84,9 @@ void w5500_port_stm32_delay_ms(uint32_t ms);
 /** DWT cycle-counter based microsecond delay; enables 100 us command polling. */
 void w5500_port_stm32_delay_us(uint32_t us);
 
+/** Current DWT cycle counter, for benchmarks (wraps naturally). */
+uint32_t w5500_port_stm32_cycles(void);
+
 #ifdef __cplusplus
 }
 #endif

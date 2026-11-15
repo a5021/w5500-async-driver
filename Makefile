@@ -73,12 +73,20 @@ test: $(BUILD)/test_w5500.exe $(BUILD)/test_protocols.exe $(BUILD)/test_modbus.e
 	./$(BUILD)/test_modbus.exe
 
 # Firmware examples are syntax-checked only: the STM32 port needs no vendor
-# headers, so the same sources compile on the host.
+# headers, so the same sources compile on the host. The emulator demo is
+# built and executed instead, giving CI an end-to-end API check.
 EXAMPLE_SRC := examples/stm32f4_baremetal/main.c \
                examples/stm32f4_dhcp_dns/main.c \
-               examples/stm32f4_modbus_server/main.c
+               examples/stm32f4_modbus_server/main.c \
+               examples/stm32f4_bench/main.c
+EXAMPLE_HOST := $(BUILD)/host_mock_demo.exe
 
-examples:
+$(EXAMPLE_HOST): examples/host_mock_demo/main.c $(CORE_SRC) tests/mock_w5500.c | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests examples/host_mock_demo/main.c \
+	    $(CORE_SRC) tests/mock_w5500.c -o $@
+
+examples: $(EXAMPLE_HOST)
+	./$(EXAMPLE_HOST)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -Iports/stm32 -fsyntax-only $(EXAMPLE_SRC)
 
 clean:
