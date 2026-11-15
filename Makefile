@@ -73,7 +73,7 @@ test: $(BUILD)/test_w5500.exe $(BUILD)/test_protocols.exe $(BUILD)/test_modbus.e
 	./$(BUILD)/test_modbus.exe
 
 # Firmware examples are syntax-checked only: the STM32 port needs no vendor
-# headers, so the same sources compiles on the host.
+# headers, so the same sources compile on the host.
 EXAMPLE_SRC := examples/stm32f4_baremetal/main.c \
                examples/stm32f4_dhcp_dns/main.c \
                examples/stm32f4_modbus_server/main.c
