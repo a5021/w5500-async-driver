@@ -111,7 +111,8 @@ w5500_result_t w5500_socket_open_ex(w5500_handle_t handle,
     /* Claim the slot before touching the chip. */
     slot->in_use = 1u;
     slot->owner = handle;
-    slot->proto = mr;
+    slot->proto = (proto == W5500_PROTO_TCP) ? W5500_Sn_MR_TCP
+                                             : W5500_Sn_MR_UDP;
     slot->send_pending = 0u;
     slot->state = W5500_SSR_INITIATED;
     slot->cb = cb;

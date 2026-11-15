@@ -333,6 +333,9 @@ static void test_open_flags(void)
                                   W5500_SOCK_F_NO_DELAY, evt_cb, NULL, &s),
              W5500_OK);
     CHECK_EQ(g_mock.sreg[0][W5500_Sn_MR], W5500_Sn_MR_TCP | W5500_Sn_MR_ND);
+    /* A flagged socket must still behave as plain TCP for the API. */
+    CHECK_EQ(w5500_socket_connect(s, (const uint8_t[]){10, 0, 0, 5}, 80u),
+             W5500_OK);
     CHECK_EQ(w5500_socket_close(s), W5500_OK);
 
     CHECK_EQ(w5500_socket_open_ex(h, W5500_PROTO_UDP, 6000u,
