@@ -32,6 +32,7 @@ struct w5500_socket {
     uint8_t               in_use;
     uint8_t               proto;     /**< W5500_Sn_MR_TCP / W5500_Sn_MR_UDP */
     uint8_t               send_pending; /**< SEND issued, SEND_OK not seen yet */
+    uint8_t               peer_closed;  /**< FIN seen, RX still holds data */
     w5500_sock_state_t    state;
     w5500_event_cb_t      cb;
     void                 *user_arg;

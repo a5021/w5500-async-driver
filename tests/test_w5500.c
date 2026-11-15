@@ -777,6 +777,101 @@ static void test_lock_balance(void)
     CHECK_EQ(g_mock.lock_count, g_mock.unlock_count);
 }
 
+static void test_half_close_keeps_data(void)
+{
+    w5500_handle_t h = fixture_open();
+    w5500_socket_t s = NULL;
+    static const uint8_t srv[4] = {10, 0, 0, 5};
+    uint8_t buf[8];
+    uint16_t n = 0u;
+
+    evt_reset();
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5000u, evt_cb, NULL, &s),
+             W5500_OK);
+    CHECK_EQ(w5500_socket_connect(s, srv, 80u), W5500_OK);
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(g_evt_count, 1u); /* CONNECTED */
+
+    /* Peer sends 3 bytes and then FIN in the same window. */
+    mock_w5500_inject_rx(0, (const uint8_t *)"abc", 3u);
+    mock_w5500_remote_disconnect(0);
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+
+    /* DATA_RECEIVED must arrive with the slot still alive. */
+    CHECK_EQ(g_evt_count, 2u);
+    CHECK_EQ(g_evt[1].event, W5500_EVENT_DATA_RECEIVED);
+    CHECK_EQ(w5500_socket_recv(s, buf, sizeof(buf), &n), W5500_OK);
+    CHECK_EQ(n, 3u);
+    CHECK_EQ(memcmp(buf, "abc", 3), 0);
+
+    /* Only after the RX buffer is empty does the close event arrive. */
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(g_evt_count, 3u);
+    CHECK_EQ(g_evt[2].event, W5500_EVENT_DISCONNECTED);
+    CHECK_EQ(w5500_socket_recv(s, buf, sizeof(buf), &n), W5500_ERR_PARAM);
+    w5500_deinit(h);
+}
+
+static void test_send_done_recovery(void)
+{
+    w5500_handle_t h = fixture_open();
+    w5500_socket_t s = NULL;
+    static const uint8_t srv[4] = {10, 0, 0, 5};
+    uint8_t blob[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    uint16_t n = 0u;
+
+    evt_reset();
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5000u, evt_cb, NULL, &s),
+             W5500_OK);
+    CHECK_EQ(w5500_socket_connect(s, srv, 80u), W5500_OK);
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+
+    g_mock.send_stall = 1u;
+    CHECK_EQ(w5500_socket_send(s, blob, 4u, &n), W5500_OK);
+    CHECK_EQ(n, 4u);
+    CHECK_EQ(w5500_socket_send(s, blob, 4u, &n), W5500_ERR_BUSY);
+    CHECK_EQ(n, 0u);
+
+    /* The chip finishes the frame, but the SEND_OK interrupt is lost. */
+    g_mock.send_stall = 0u;
+    mock_w5500_complete_send(0);
+    g_mock.sreg[0][W5500_Sn_IR] = 0u;
+    evt_reset();
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(g_evt_count, 1u);
+    CHECK_EQ(g_evt[0].event, W5500_EVENT_SEND_DONE);
+
+    /* The socket is usable again. */
+    CHECK_EQ(w5500_socket_send(s, blob, 4u, &n), W5500_OK);
+    CHECK_EQ(n, 4u);
+    CHECK_EQ(w5500_socket_close(s), W5500_OK);
+    w5500_deinit(h);
+}
+
+static void test_poll_read_budget(void)
+{
+    w5500_handle_t h = fixture_open();
+    w5500_socket_t u = NULL;
+    w5500_socket_t t = NULL;
+
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_UDP, 6000u, evt_cb, NULL, &u),
+             W5500_OK);
+    g_mock.bus_reads = 0u;
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    /* SIR + IR + PHYCFGR; UDP has no passive close, so no Sn_SR read. */
+    CHECK_EQ(g_mock.bus_reads, 3u);
+    CHECK_EQ(w5500_socket_close(u), W5500_OK);
+
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5000u, evt_cb, NULL, &t),
+             W5500_OK);
+    g_mock.bus_reads = 0u;
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    /* One extra read: Sn_SR for the passive-close fallback. */
+    CHECK_EQ(g_mock.bus_reads, 4u);
+    CHECK_EQ(w5500_socket_close(t), W5500_OK);
+    w5500_deinit(h);
+}
+
 /* ------------------------------------------------------------------ */
 
 int main(void)
@@ -800,6 +895,9 @@ int main(void)
     test_delay_us_path();
     test_socket_buffers_asym();
     test_udp_zero_length();
+    test_half_close_keeps_data();
+    test_send_done_recovery();
+    test_poll_read_budget();
     test_open_timeout_stuck_cr();
     test_open_rejects_bad_args();
     test_tcp_client_flow();

@@ -28,12 +28,20 @@ static w5500_result_t w5500_sock_read_sr(w5500_socket_t sock, uint8_t *sr)
     return w5500_read8(sock->owner, W5500_Sn_SR, W5500_BSB_SREG(sock->id), sr);
 }
 
+/* Pending bytes in the hardware RX buffer (caller holds the lock). */
+static w5500_result_t w5500_sock_rx_pending(w5500_socket_t sock, uint16_t *n)
+{
+    return w5500_read16_stable(sock->owner, W5500_Sn_RX_RSR,
+                               W5500_BSB_SREG(sock->id), n);
+}
+
 static void w5500_sock_release(w5500_socket_t sock)
 {
     sock->in_use = 0u;
     sock->state = W5500_SSR_FREE;
     sock->proto = W5500_Sn_MR_CLOSE;
     sock->send_pending = 0u;
+    sock->peer_closed = 0u;
     sock->cb = NULL;
     sock->user_arg = NULL;
 }
@@ -117,6 +125,7 @@ w5500_result_t w5500_socket_open_ex(w5500_handle_t handle,
     slot->state = W5500_SSR_INITIATED;
     slot->cb = cb;
     slot->user_arg = user_arg;
+    slot->peer_closed = 0u;
 
     rc = w5500_write8(handle, W5500_Sn_MR, W5500_BSB_SREG(slot->id), mr);
     if (rc == W5500_OK) {
@@ -686,20 +695,56 @@ static void w5500_poll_one(w5500_handle_t h, w5500_socket_t sock, uint8_t sir,
     }
 
     if (ir == 0u) {
-        (void)w5500_sock_read_sr(sock, &sr);
-        /* Passive close can also be observed via SR alone (e.g. RST). */
-        if (sock->state == W5500_SSR_CLOSING && sr == W5500_SOCK_CLOSED) {
-            (void)w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_CLOSE);
-            w5500_poll_push(events, count, sock, W5500_EVENT_DISCONNECTED,
-                            W5500_OK);
-            w5500_sock_release(sock);
-        } else if (sock->state != W5500_SSR_CLOSING &&
-                   sock->proto == W5500_Sn_MR_TCP &&
-                   sr == W5500_SOCK_CLOSED) {
-            /* Connection dropped without an IR flag. */
-            w5500_poll_push(events, count, sock, W5500_EVENT_DISCONNECTED,
-                            W5500_OK);
-            w5500_sock_release(sock);
+        uint16_t pending = 0u;
+
+        /* Half-closed by the peer: keep the slot until the app drains RX. */
+        if (sock->peer_closed) {
+            if (w5500_sock_rx_pending(sock, &pending) == W5500_OK &&
+                pending == 0u) {
+                (void)w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_CLOSE);
+                w5500_poll_push(events, count, sock, W5500_EVENT_DISCONNECTED,
+                                W5500_OK);
+                w5500_sock_release(sock);
+            }
+            return;
+        }
+
+        /* Passive close is a TCP concept; UDP sockets need no SR read. */
+        if (sock->proto == W5500_Sn_MR_TCP) {
+            (void)w5500_sock_read_sr(sock, &sr);
+            if (sock->state == W5500_SSR_CLOSING &&
+                sr == W5500_SOCK_CLOSED) {
+                (void)w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_CLOSE);
+                w5500_poll_push(events, count, sock,
+                                W5500_EVENT_DISCONNECTED, W5500_OK);
+                w5500_sock_release(sock);
+                return;
+            }
+            if (sock->state != W5500_SSR_CLOSING &&
+                sr == W5500_SOCK_CLOSED) {
+                /* Connection dropped without an IR flag. */
+                w5500_poll_push(events, count, sock,
+                                W5500_EVENT_DISCONNECTED, W5500_OK);
+                w5500_sock_release(sock);
+                return;
+            }
+        }
+
+        /* Recover a SEND whose SEND_OK interrupt was lost: the chip only
+           advances TX_RD past TX_WR once the frame left the buffer. */
+        if (sock->send_pending != 0u) {
+            uint16_t rd = 0u;
+            uint16_t wr = 0u;
+
+            if (w5500_read16(h, W5500_Sn_TX_RD, W5500_BSB_SREG(sock->id),
+                             &rd) == W5500_OK &&
+                w5500_read16(h, W5500_Sn_TX_WR, W5500_BSB_SREG(sock->id),
+                             &wr) == W5500_OK &&
+                rd == wr) {
+                sock->send_pending = 0u;
+                w5500_poll_push(events, count, sock, W5500_EVENT_SEND_DONE,
+                                W5500_OK);
+            }
         }
         return;
     }
@@ -731,6 +776,25 @@ static void w5500_poll_one(w5500_handle_t h, w5500_socket_t sock, uint8_t sir,
     }
 
     if ((ir & W5500_Sn_IR_DISCON) != 0u) {
+        if (sock->proto == W5500_Sn_MR_TCP) {
+            uint16_t pending = 0u;
+
+            /* Half-close: keep the slot while RX still holds data so the
+               application can drain it from the DATA_RECEIVED callback. */
+            sock->peer_closed = 1u;
+            if (w5500_sock_rx_pending(sock, &pending) == W5500_OK &&
+                pending == 0u) {
+                (void)w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_CLOSE);
+                w5500_poll_push(events, count, sock,
+                                W5500_EVENT_DISCONNECTED, W5500_OK);
+                w5500_sock_release(sock);
+            } else if (pending != 0u &&
+                       (ir & W5500_Sn_IR_RECV) == 0u) {
+                w5500_poll_push(events, count, sock,
+                                W5500_EVENT_DATA_RECEIVED, W5500_OK);
+            }
+            return;
+        }
         (void)w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_CLOSE);
         w5500_poll_push(events, count, sock, W5500_EVENT_DISCONNECTED,
                         W5500_OK);

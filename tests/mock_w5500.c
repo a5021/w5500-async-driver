@@ -302,6 +302,7 @@ static uint8_t mock_spi_byte(uint8_t b)
         uint8_t r = 0u;
         if (g_mock.rwb != 0u) {
             r = mock_mem_read(g_mock.bsb, g_mock.addr);
+            g_mock.bus_reads++;
         } else {
             mock_mem_write(g_mock.bsb, g_mock.addr, b);
         }

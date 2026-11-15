@@ -42,6 +42,7 @@ typedef struct {
     uint32_t lock_count;
     uint32_t unlock_count;
     uint32_t elapsed_ms;
+    uint32_t bus_reads;   /* SPI read transactions observed */
 } mock_w5500_t;
 
 extern mock_w5500_t g_mock;

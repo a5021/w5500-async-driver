@@ -73,6 +73,12 @@ static void evt_cb(w5500_socket_t sock, w5500_event_t event,
     if ((unsigned)event > (unsigned)W5500_EVENT_ERROR) {
         abort();
     }
+    /* Release events are delivered on a slot the driver just freed; every
+       other event must still belong to a live socket. */
+    if (event != W5500_EVENT_DISCONNECTED && event != W5500_EVENT_ERROR &&
+        sock->in_use == 0u) {
+        abort();
+    }
     /* The mirror is only cleared inside this callback; an entry-time NULL
        means poll dispatched for a slot that was free at poll start. */
     if (g_slots[sock->id] == NULL) {
