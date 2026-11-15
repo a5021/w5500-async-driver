@@ -114,7 +114,8 @@ define run_fuzz
 endef
 
 .PHONY: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
-        fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns fuzz-all
+        fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns \
+        fuzz-dhcp-state fuzz-dns-state fuzz-all
 
 $(FUZZ_OUT):
 	mkdir -p $@
@@ -164,5 +165,16 @@ fuzz-dns: | $(FUZZ_OUT)
 	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_dns.exe
 	$(call run_fuzz,fuzz_dns)
 
+fuzz-dhcp-state: | $(FUZZ_OUT)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_dhcp_state.c $(FUZZ_SRC) \
+	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_dhcp_state.exe
+	$(call run_fuzz,fuzz_dhcp_state)
+
+fuzz-dns-state: | $(FUZZ_OUT)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_dns_state.c $(FUZZ_SRC) \
+	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_dns_state.exe
+	$(call run_fuzz,fuzz_dns_state)
+
 fuzz-all: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
-          fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns
+          fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns \
+          fuzz-dhcp-state fuzz-dns-state
