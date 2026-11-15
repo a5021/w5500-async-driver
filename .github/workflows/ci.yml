@@ -39,6 +39,8 @@ jobs:
           cp /var/cache/apt/archives/*.deb ~/apt-debs/ 2>/dev/null || true
       - name: Build and run the unit tests
         run: make test
+      - name: Check the examples
+        run: make examples
 
   fuzz:
     runs-on: ubuntu-latest
