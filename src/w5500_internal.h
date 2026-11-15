@@ -31,6 +31,7 @@ struct w5500_socket {
     uint8_t               id;        /**< Hardware socket index 0..3 */
     uint8_t               in_use;
     uint8_t               proto;     /**< W5500_Sn_MR_TCP / W5500_Sn_MR_UDP */
+    uint8_t               send_pending; /**< SEND issued, SEND_OK not seen yet */
     w5500_sock_state_t    state;
     w5500_event_cb_t      cb;
     void                 *user_arg;
@@ -41,6 +42,9 @@ struct w5500_context {
     w5500_plat_if_t       plat;
     uint32_t              timeout_ms;
     uint8_t               owns_mem;  /**< 1 => allocated by w5500_init() */
+    uint8_t               link_snapshot; /**< last LNK|SPD|DPX; 0xFF = unknown */
+    w5500_link_cb_t       link_cb;
+    void                 *link_user;
     struct w5500_socket   sockets[W5500_SOCKET_COUNT];
 };
 

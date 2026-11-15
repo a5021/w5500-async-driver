@@ -87,6 +87,16 @@ void w5500_port_stm32_delay_ms(uint32_t ms)
     }
 }
 
+void w5500_port_stm32_delay_us(uint32_t us)
+{
+    uint32_t start = DWT->CYCCNT;
+    uint32_t ticks = us * (SystemCoreClock / 1000000u);
+
+    while ((uint32_t)(DWT->CYCCNT - start) < ticks) {
+        /* busy wait */
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* Platform callbacks                                                  */
 /* ------------------------------------------------------------------ */
@@ -140,6 +150,7 @@ void w5500_port_stm32_fill_plat(w5500_plat_if_t *plat)
     plat->spi_transfer_byte = plat_spi_transfer_byte;
     plat->spi_transfer_burst = plat_spi_transfer_burst;
     plat->delay_ms = w5500_port_stm32_delay_ms;
+    plat->delay_us = w5500_port_stm32_delay_us;
     /* lock/unlock are left as-is: bind FreeRTOS hooks via
      * ports/freertos/w5500_port_rtos.h when an RTOS is used. */
 }

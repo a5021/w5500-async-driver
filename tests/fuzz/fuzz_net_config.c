@@ -18,6 +18,7 @@
  *            7 CHECK       (0 args)
  *            8 SW_RESET    (0 args)
  *            9 NEGATIVE probes: NULL/zero-length arguments (0 args)
+ *           10 ASYM_SETBUF 4 bytes (one KB size per socket)
  *
  * Properties:
  *   1. set_mac/ip/mask/gw: rc == OK, raw common[off..off+n) equals the
@@ -36,6 +37,9 @@
  *      back to post-reset defaults.
  *   6. Every NULL/zero-arity probe returns ERR_PARAM without touching
  *      the register image.
+ *   7. ASYM_SETBUF: OK <=> all four sizes are chip-legal and their sum fits
+ *      16 KB; on OK the per-socket size registers match the request and all
+ *      slots are invalidated, otherwise nothing moves.
  */
 #include "fuzz_common.h"
 
@@ -129,7 +133,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         uint8_t op = data[p++];
         ops++;
 
-        switch (op % 10u) {
+        switch (op % 11u) {
         case 0u: { /* SET_MAC */
             w5500_result_t rc;
             NEED(6);
@@ -197,6 +201,76 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                     }
                     if (h->sockets[i].in_use != 0u ||
                         h->sockets[i].state != W5500_SSR_FREE ||
+                        h->sockets[i].cb != NULL ||
+                        h->sockets[i].user_arg != NULL) {
+                        abort(); /* buffer change invalidates open handles */
+                    }
+                }
+                for (i = 0; i < 4u; i++) {
+                    for (k = 0; k < 0x30u; k++) {
+                        int is_buf_size = (k == W5500_Sn_TXBUF_SIZE ||
+                                           k == W5500_Sn_RXBUF_SIZE);
+                        if (!is_buf_size &&
+                            g_mock.sreg[i][k] != snap_sreg[i][k]) {
+                            abort(); /* only the two size bytes may move */
+                        }
+                    }
+                }
+            } else {
+                if (memcmp(g_mock.sreg, snap_sreg, sizeof(snap_sreg)) != 0) {
+                    abort(); /* rejected request must not write anything */
+                }
+                for (i = 0; i < 4u; i++) {
+                    if (h->sockets[i].in_use != slot_snapshot[i].in_use ||
+                        h->sockets[i].state != slot_snapshot[i].state ||
+                        h->sockets[i].cb != slot_snapshot[i].cb ||
+                        h->sockets[i].user_arg !=
+                            slot_snapshot[i].user_arg) {
+                        abort();
+                    }
+                }
+            }
+            break;
+        }
+        case 10u: { /* per-socket SETBUF (asymmetric layout) */
+            uint8_t kb[4];
+            uint32_t sum = 0u;
+            int expect_ok = 1;
+            w5500_result_t rc;
+            unsigned i;
+            unsigned k;
+
+            NEED(4);
+            for (i = 0; i < 4u; i++) {
+                kb[i] = data[p + i];
+                if (!(kb[i] == 1u || kb[i] == 2u || kb[i] == 4u ||
+                      kb[i] == 8u || kb[i] == 16u)) {
+                    expect_ok = 0;
+                }
+                sum += kb[i];
+            }
+            if (sum > 16u) {
+                expect_ok = 0;
+            }
+            p += 4u;
+            memcpy(snap_sreg, g_mock.sreg, sizeof(snap_sreg));
+            take_slot_snap(h, slot_snapshot);
+
+            rc = w5500_set_socket_buffers(h, kb);
+            fuzz_check_rc(rc);
+            if (((rc == W5500_OK) ? 1 : 0) != expect_ok) {
+                abort(); /* OK <=> every size valid and the sum fits 16 KB */
+            }
+
+            if (rc == W5500_OK) {
+                for (i = 0; i < 4u; i++) {
+                    if (g_mock.sreg[i][W5500_Sn_TXBUF_SIZE] != kb[i] ||
+                        g_mock.sreg[i][W5500_Sn_RXBUF_SIZE] != kb[i]) {
+                        abort(); /* per-socket sizes land one-for-one */
+                    }
+                    if (h->sockets[i].in_use != 0u ||
+                        h->sockets[i].state != W5500_SSR_FREE ||
+                        h->sockets[i].send_pending != 0u ||
                         h->sockets[i].cb != NULL ||
                         h->sockets[i].user_arg != NULL) {
                         abort(); /* buffer change invalidates open handles */

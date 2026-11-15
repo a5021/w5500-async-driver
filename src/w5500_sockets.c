@@ -33,6 +33,7 @@ static void w5500_sock_release(w5500_socket_t sock)
     sock->in_use = 0u;
     sock->state = W5500_SSR_FREE;
     sock->proto = W5500_Sn_MR_CLOSE;
+    sock->send_pending = 0u;
     sock->cb = NULL;
     sock->user_arg = NULL;
 }
@@ -41,12 +42,13 @@ static void w5500_sock_release(w5500_socket_t sock)
 /* Open / close                                                        */
 /* ------------------------------------------------------------------ */
 
-w5500_result_t w5500_socket_open(w5500_handle_t handle,
-                                 w5500_proto_t proto,
-                                 uint16_t local_port,
-                                 w5500_event_cb_t cb,
-                                 void *user_arg,
-                                 w5500_socket_t *out_sock)
+w5500_result_t w5500_socket_open_ex(w5500_handle_t handle,
+                                    w5500_proto_t proto,
+                                    uint16_t local_port,
+                                    uint32_t flags,
+                                    w5500_event_cb_t cb,
+                                    void *user_arg,
+                                    w5500_socket_t *out_sock)
 {
     struct w5500_socket *slot = NULL;
     uint8_t i;
@@ -60,8 +62,28 @@ w5500_result_t w5500_socket_open(w5500_handle_t handle,
     if (proto != W5500_PROTO_TCP && proto != W5500_PROTO_UDP) {
         return W5500_ERR_PARAM;
     }
+    if ((flags & ~(uint32_t)(W5500_SOCK_F_NO_DELAY | W5500_SOCK_F_MULTI |
+                             W5500_SOCK_F_BROADCAST_BLOCK)) != 0u) {
+        return W5500_ERR_PARAM; /* unknown flag bit */
+    }
+    if (proto == W5500_PROTO_TCP &&
+        (flags & (W5500_SOCK_F_MULTI | W5500_SOCK_F_BROADCAST_BLOCK)) != 0u) {
+        return W5500_ERR_PARAM; /* Sn_MR.MULTI/BCASTB are UDP-only */
+    }
+    if (proto == W5500_PROTO_UDP && (flags & W5500_SOCK_F_NO_DELAY) != 0u) {
+        return W5500_ERR_PARAM; /* Sn_MR.ND is TCP-only */
+    }
 
     mr = (proto == W5500_PROTO_TCP) ? W5500_Sn_MR_TCP : W5500_Sn_MR_UDP;
+    if ((flags & W5500_SOCK_F_NO_DELAY) != 0u) {
+        mr = (uint8_t)(mr | W5500_Sn_MR_ND);
+    }
+    if ((flags & W5500_SOCK_F_MULTI) != 0u) {
+        mr = (uint8_t)(mr | W5500_Sn_MR_MULTI);
+    }
+    if ((flags & W5500_SOCK_F_BROADCAST_BLOCK) != 0u) {
+        mr = (uint8_t)(mr | W5500_Sn_MR_BCASTB);
+    }
     expect_sr = (proto == W5500_PROTO_TCP) ? W5500_SOCK_INIT : W5500_SOCK_UDP;
 
     w5500_lock(handle);
@@ -81,6 +103,7 @@ w5500_result_t w5500_socket_open(w5500_handle_t handle,
     slot->in_use = 1u;
     slot->owner = handle;
     slot->proto = mr;
+    slot->send_pending = 0u;
     slot->state = W5500_SSR_INITIATED;
     slot->cb = cb;
     slot->user_arg = user_arg;
@@ -117,6 +140,17 @@ w5500_result_t w5500_socket_open(w5500_handle_t handle,
     *out_sock = slot;
     w5500_unlock(handle);
     return W5500_OK;
+}
+
+w5500_result_t w5500_socket_open(w5500_handle_t handle,
+                                 w5500_proto_t proto,
+                                 uint16_t local_port,
+                                 w5500_event_cb_t cb,
+                                 void *user_arg,
+                                 w5500_socket_t *out_sock)
+{
+    return w5500_socket_open_ex(handle, proto, local_port, 0u, cb, user_arg,
+                                out_sock);
 }
 
 w5500_result_t w5500_socket_close(w5500_socket_t sock)
@@ -297,6 +331,7 @@ static w5500_result_t w5500_sock_tx_common(w5500_socket_t sock,
     }
     rc = w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_SEND);
     if (rc == W5500_OK) {
+        sock->send_pending = 1u; /* one SEND in flight per socket */
         *sent = chunk;
     }
     return rc;
@@ -316,6 +351,13 @@ w5500_result_t w5500_socket_send(w5500_socket_t sock,
     }
 
     w5500_lock(sock->owner);
+    if (sock->send_pending != 0u) {
+        w5500_unlock(sock->owner);
+        if (sent != NULL) {
+            *sent = 0u;
+        }
+        return W5500_ERR_BUSY; /* previous SEND still in flight */
+    }
     rc = w5500_sock_tx_common(sock, data, len, sent);
     w5500_unlock(sock->owner);
     return rc;
@@ -339,6 +381,13 @@ w5500_result_t w5500_socket_sendto(w5500_socket_t sock,
 
     h = sock->owner;
     w5500_lock(h);
+    if (sock->send_pending != 0u) {
+        w5500_unlock(h);
+        if (sent != NULL) {
+            *sent = 0u;
+        }
+        return W5500_ERR_BUSY; /* previous SEND still in flight */
+    }
     rc = w5500_ll_write(h, W5500_Sn_DIPR, W5500_BSB_SREG(sock->id), ip, 4u);
     if (rc == W5500_OK) {
         rc = w5500_write16(h, W5500_Sn_DPORT, W5500_BSB_SREG(sock->id), port);
@@ -496,6 +545,84 @@ w5500_result_t w5500_socket_set_keepalive(w5500_socket_t sock,
     return rc;
 }
 
+w5500_result_t w5500_socket_set_ttl(w5500_socket_t sock, uint8_t ttl)
+{
+    w5500_result_t rc = w5500_sock_valid(sock);
+    if (rc != W5500_OK) {
+        return rc;
+    }
+    w5500_lock(sock->owner);
+    rc = w5500_write8(sock->owner, W5500_Sn_TTL, W5500_BSB_SREG(sock->id), ttl);
+    w5500_unlock(sock->owner);
+    return rc;
+}
+
+w5500_result_t w5500_socket_set_tos(w5500_socket_t sock, uint8_t tos)
+{
+    w5500_result_t rc = w5500_sock_valid(sock);
+    if (rc != W5500_OK) {
+        return rc;
+    }
+    w5500_lock(sock->owner);
+    rc = w5500_write8(sock->owner, W5500_Sn_TOS, W5500_BSB_SREG(sock->id), tos);
+    w5500_unlock(sock->owner);
+    return rc;
+}
+
+w5500_result_t w5500_socket_get_mss(w5500_socket_t sock, uint16_t *mss)
+{
+    w5500_result_t rc = w5500_sock_valid(sock);
+    if (rc != W5500_OK || mss == NULL) {
+        return (rc != W5500_OK) ? rc : W5500_ERR_PARAM;
+    }
+    w5500_lock(sock->owner);
+    rc = w5500_read16(sock->owner, W5500_Sn_MSSR, W5500_BSB_SREG(sock->id),
+                      mss);
+    w5500_unlock(sock->owner);
+    return rc;
+}
+
+w5500_result_t w5500_socket_set_mss(w5500_socket_t sock, uint16_t mss)
+{
+    w5500_result_t rc = w5500_sock_valid(sock);
+    if (rc != W5500_OK) {
+        return rc;
+    }
+    w5500_lock(sock->owner);
+    rc = w5500_write16(sock->owner, W5500_Sn_MSSR, W5500_BSB_SREG(sock->id),
+                       mss);
+    w5500_unlock(sock->owner);
+    return rc;
+}
+
+w5500_result_t w5500_socket_get_status(w5500_socket_t sock, uint8_t *status)
+{
+    w5500_result_t rc = w5500_sock_valid(sock);
+    if (rc != W5500_OK || status == NULL) {
+        return (rc != W5500_OK) ? rc : W5500_ERR_PARAM;
+    }
+    w5500_lock(sock->owner);
+    rc = w5500_sock_read_sr(sock, status);
+    w5500_unlock(sock->owner);
+    return rc;
+}
+
+w5500_result_t w5500_socket_keepalive_probe(w5500_socket_t sock)
+{
+    w5500_result_t rc = w5500_sock_valid(sock);
+    if (rc != W5500_OK) {
+        return rc;
+    }
+    if (sock->proto != W5500_Sn_MR_TCP ||
+        sock->state != W5500_SSR_ESTABLISHED) {
+        return W5500_ERR_STATE;
+    }
+    w5500_lock(sock->owner);
+    rc = w5500_sn_exec_cmd(sock->owner, sock->id, W5500_Sn_CR_SEND_KEEP);
+    w5500_unlock(sock->owner);
+    return rc;
+}
+
 /* ------------------------------------------------------------------ */
 /* Polling / event dispatch                                            */
 /* ------------------------------------------------------------------ */
@@ -525,20 +652,23 @@ static void w5500_poll_push(w5500_evt_t *events, uint8_t *count,
     (*count)++;
 }
 
-static void w5500_poll_one(w5500_handle_t h, w5500_socket_t sock,
+static void w5500_poll_one(w5500_handle_t h, w5500_socket_t sock, uint8_t sir,
                            w5500_evt_t *events, uint8_t *count)
 {
     uint8_t ir = 0u;
     uint8_t sr = 0u;
-    w5500_result_t rc;
 
-    rc = w5500_read8(h, W5500_Sn_IR, W5500_BSB_SREG(sock->id), &ir);
-    if (rc != W5500_OK) {
-        return;
+    /* SIR is the OR of all Sn_IR registers: skip the per-socket read unless
+       this socket has a pending summary bit. */
+    if ((sir & (uint8_t)(1u << sock->id)) != 0u) {
+        if (w5500_read8(h, W5500_Sn_IR, W5500_BSB_SREG(sock->id), &ir) !=
+            W5500_OK) {
+            return;
+        }
     }
-    (void)w5500_sock_read_sr(sock, &sr);
 
     if (ir == 0u) {
+        (void)w5500_sock_read_sr(sock, &sr);
         /* Passive close can also be observed via SR alone (e.g. RST). */
         if (sock->state == W5500_SSR_CLOSING && sr == W5500_SOCK_CLOSED) {
             (void)w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_CLOSE);
@@ -570,6 +700,7 @@ static void w5500_poll_one(w5500_handle_t h, w5500_socket_t sock,
     }
 
     if ((ir & W5500_Sn_IR_SENDOK) != 0u) {
+        sock->send_pending = 0u;
         w5500_poll_push(events, count, sock, W5500_EVENT_SEND_DONE, W5500_OK);
     }
 
@@ -589,11 +720,36 @@ static void w5500_poll_one(w5500_handle_t h, w5500_socket_t sock,
     }
 }
 
+w5500_result_t w5500_irq_pending(w5500_handle_t handle,
+                                 uint8_t *ir,
+                                 uint8_t *sir)
+{
+    w5500_result_t rc;
+
+    if (handle == NULL || ir == NULL || sir == NULL) {
+        return W5500_ERR_PARAM;
+    }
+    w5500_lock(handle);
+    rc = w5500_read8(handle, W5500_REG_IR, W5500_BSB_COMMON, ir);
+    if (rc == W5500_OK) {
+        rc = w5500_read8(handle, W5500_REG_SIR, W5500_BSB_COMMON, sir);
+    }
+    w5500_unlock(handle);
+    return rc;
+}
+
 w5500_result_t w5500_poll(w5500_handle_t handle)
 {
     w5500_evt_t events[W5500_POLL_MAX_EVENTS];
+    w5500_link_info_t link;
+    w5500_link_cb_t link_cb = NULL;
+    void *link_user = NULL;
     uint8_t count = 0u;
     uint8_t i;
+    uint8_t ir = 0u;
+    uint8_t sir = 0u;
+    uint8_t phy = 0u;
+    uint8_t link_changed = 0u;
     w5500_result_t rc = W5500_OK;
 
     if (handle == NULL) {
@@ -601,11 +757,39 @@ w5500_result_t w5500_poll(w5500_handle_t handle)
     }
 
     w5500_lock(handle);
+    if (w5500_read8(handle, W5500_REG_SIR, W5500_BSB_COMMON, &sir) !=
+        W5500_OK) {
+        sir = 0u;
+    }
+    if (w5500_read8(handle, W5500_REG_IR, W5500_BSB_COMMON, &ir) != W5500_OK) {
+        ir = 0u;
+    }
     for (i = 0; i < W5500_SOCKET_COUNT; i++) {
         if (handle->sockets[i].in_use != 0u) {
-            w5500_poll_one(handle, &handle->sockets[i], events, &count);
+            w5500_poll_one(handle, &handle->sockets[i], sir, events, &count);
         }
     }
+
+    /* Link status is sampled only when nothing else interrupted: a busy
+       socket round must not cost an extra PHYCFGR read. */
+    if (ir == 0u && sir == 0u &&
+        w5500_read8(handle, W5500_REG_PHYCFGR, W5500_BSB_COMMON, &phy) ==
+            W5500_OK) {
+        phy = (uint8_t)(phy & (W5500_PHYCFGR_LNK_ON | W5500_PHYCFGR_SPD_100 |
+                               W5500_PHYCFGR_DPX_FULL));
+        if (handle->link_snapshot == 0xFFu) {
+            handle->link_snapshot = phy; /* baseline only, no event */
+        } else if (phy != handle->link_snapshot) {
+            handle->link_snapshot = phy;
+            link_changed = 1u;
+            link.up = (uint8_t)((phy & W5500_PHYCFGR_LNK_ON) != 0u);
+            link.speed_100 = (uint8_t)((phy & W5500_PHYCFGR_SPD_100) != 0u);
+            link.full_duplex =
+                (uint8_t)((phy & W5500_PHYCFGR_DPX_FULL) != 0u);
+        }
+    }
+    link_cb = handle->link_cb;
+    link_user = handle->link_user;
     w5500_unlock(handle);
 
     /* Callbacks run with the lock released — re-entering the driver is safe. */
@@ -614,6 +798,9 @@ w5500_result_t w5500_poll(w5500_handle_t handle)
             events[i].cb(events[i].sock, events[i].event, events[i].status,
                          events[i].user_arg);
         }
+    }
+    if (link_changed != 0u && link_cb != NULL) {
+        link_cb(handle, &link, link_user);
     }
     return rc;
 }

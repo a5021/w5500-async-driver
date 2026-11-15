@@ -10,8 +10,9 @@
  *   [1..2] fuzzed frame address (big endian)
  *   [3]    fuzzed raw BSB byte (driver must mask to 5 bits)
  *   [4]    fuzzed raw RWB byte (driver must mask to 1 bit)
- *   [5]    common-block offset selector (offset = 1 + %63, i.e. 1..63;
- *          MR at 0 is excluded so the write cannot trigger a chip reset)
+ *   [5]    common-block offset selector (offset = 1 + %62, i.e. 1..0x3F;
+ *          MR at 0 is excluded so the write cannot trigger a chip reset,
+ *          SIR at 0x17 is skipped because it reads back computed)
  *   [6]    length selector (n = 1 + %15, clamped to fit) and part-B data byte
  *   [7..]  payload bytes (padded with 0x5A when short)
  *
@@ -125,10 +126,19 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
 
     /* --- (c) full common-block frames ------------------------------ */
-    off = 1u + (unsigned)(data[5] % 63u); /* 1..63: never MR (offset 0) */
+    off = 1u + (unsigned)(data[5] % 62u); /* 1..0x16, 0x18..0x3F */
+    if (off >= 0x17u) {
+        off++; /* skip SIR at 0x17: computed, read-only socket summary */
+    }
     n = 1u + (unsigned)(data[6] % 15u);
-    if (n > 0x40u - off) {
-        n = 0x40u - off; /* stay inside the 64-byte common block */
+    {
+        unsigned end = 0x40u;
+        if (off < 0x17u) {
+            end = 0x17u; /* never cross the computed SIR byte */
+        }
+        if (n > end - off) {
+            n = end - off;
+        }
     }
     avail = (size > 7u) ? (size - 7u) : 0u;
     for (i = 0; i < n; i++) {

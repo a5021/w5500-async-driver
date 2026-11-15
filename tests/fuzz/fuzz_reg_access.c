@@ -41,6 +41,9 @@ static int roundtrip_expect(uint16_t addr, uint8_t wire_bsb, uint16_t len)
         if ((uint16_t)(off + len) > 0x40u) {
             return -1; /* address wraps inside the 64-byte block */
         }
+        if (off <= 0x17u && 0x17u < (uint16_t)(off + len)) {
+            return -1; /* SIR is a computed, read-only socket summary */
+        }
         return 1;
     }
     if (wire_bsb >= 16u) {

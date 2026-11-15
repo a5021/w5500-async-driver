@@ -180,6 +180,314 @@ static void test_link_status(void)
     w5500_deinit(h);
 }
 
+static void test_link_info(void)
+{
+    w5500_handle_t h = fixture_open();
+    w5500_link_info_t info;
+
+    g_mock.common[W5500_REG_PHYCFGR & 0x3Fu] = 0x01u; /* up, 10M, half */
+    CHECK_EQ(w5500_get_link_info(h, &info), W5500_OK);
+    CHECK_EQ(info.up, 1);
+    CHECK_EQ(info.speed_100, 0);
+    CHECK_EQ(info.full_duplex, 0);
+
+    g_mock.common[W5500_REG_PHYCFGR & 0x3Fu] = 0x07u; /* up, 100M, full */
+    CHECK_EQ(w5500_get_link_info(h, &info), W5500_OK);
+    CHECK_EQ(info.up, 1);
+    CHECK_EQ(info.speed_100, 1);
+    CHECK_EQ(info.full_duplex, 1);
+
+    g_mock.common[W5500_REG_PHYCFGR & 0x3Fu] = 0x00u; /* down */
+    CHECK_EQ(w5500_get_link_info(h, &info), W5500_OK);
+    CHECK_EQ(info.up, 0);
+    w5500_deinit(h);
+}
+
+static unsigned g_link_calls;
+static w5500_link_info_t g_link_last;
+static w5500_handle_t g_link_handle;
+
+static void link_cb(w5500_handle_t h, const w5500_link_info_t *info, void *arg)
+{
+    g_link_calls++;
+    g_link_handle = h;
+    g_link_last = *info;
+    (void)arg;
+}
+
+static void test_link_event(void)
+{
+    w5500_handle_t h = fixture_open();
+
+    g_link_calls = 0u;
+    g_link_handle = NULL;
+    g_mock.common[W5500_REG_PHYCFGR & 0x3Fu] = 0x01u;
+    CHECK_EQ(w5500_set_link_cb(h, link_cb, NULL), W5500_OK);
+
+    /* First poll only establishes the baseline. */
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(g_link_calls, 0u);
+
+    /* One change -> exactly one callback with the new state. */
+    g_mock.common[W5500_REG_PHYCFGR & 0x3Fu] = 0x00u;
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(g_link_calls, 1u);
+    CHECK_EQ(g_link_last.up, 0);
+    CHECK(g_link_handle == h);
+
+    /* Steady state -> no further callbacks. */
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(g_link_calls, 1u);
+
+    /* Speed/duplex change while up is also an event. */
+    g_mock.common[W5500_REG_PHYCFGR & 0x3Fu] = 0x07u;
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(g_link_calls, 2u);
+    CHECK_EQ(g_link_last.up, 1);
+    CHECK_EQ(g_link_last.speed_100, 1);
+    CHECK_EQ(g_link_last.full_duplex, 1);
+
+    /* Cleared callback is never invoked. */
+    g_mock.common[W5500_REG_PHYCFGR & 0x3Fu] = 0x00u;
+    CHECK_EQ(w5500_set_link_cb(h, NULL, NULL), W5500_OK);
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(g_link_calls, 2u);
+    w5500_deinit(h);
+}
+
+static void test_irq_pending(void)
+{
+    w5500_handle_t h = fixture_open();
+    w5500_socket_t s = NULL;
+    uint8_t ir = 0xFFu;
+    uint8_t sir = 0xFFu;
+
+    CHECK_EQ(w5500_irq_pending(h, &ir, &sir), W5500_OK);
+    CHECK_EQ(ir, 0);
+    CHECK_EQ(sir, 0);
+
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5000u, evt_cb, NULL, &s),
+             W5500_OK);
+    g_mock.sreg[0][W5500_Sn_IR] = W5500_Sn_IR_RECV;
+    CHECK_EQ(w5500_irq_pending(h, &ir, &sir), W5500_OK);
+    CHECK_EQ(ir, 0);
+    CHECK_EQ(sir, 0x01u); /* socket 0 summary bit */
+
+    /* Poll services and clears the bit. */
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(w5500_irq_pending(h, &ir, &sir), W5500_OK);
+    CHECK_EQ(sir, 0);
+    CHECK_EQ(g_mock.sreg[0][W5500_Sn_IR], 0);
+    CHECK_EQ(w5500_socket_close(s), W5500_OK);
+    w5500_deinit(h);
+}
+
+static void test_ping_block(void)
+{
+    w5500_handle_t h = fixture_open();
+
+    CHECK_EQ(w5500_set_ping_block(h, true), W5500_OK);
+    CHECK(g_mock.common[W5500_REG_MR & 0x3Fu] & W5500_MR_PB);
+    CHECK_EQ(w5500_set_ping_block(h, false), W5500_OK);
+    CHECK_EQ(g_mock.common[W5500_REG_MR & 0x3Fu] & W5500_MR_PB, 0);
+    w5500_deinit(h);
+}
+
+static void test_check_identity(void)
+{
+    w5500_handle_t h = fixture_open();
+    uint8_t off = (uint8_t)(W5500_REG_RTR & 0x3Fu);
+
+    CHECK_EQ(w5500_check(h), W5500_OK);
+    g_mock.common[off + 1u] = 0x00u; /* break the RTR boot value */
+    CHECK_EQ(w5500_check(h), W5500_ERR_CHIP);
+    g_mock.common[off + 1u] = 0xD0u;
+    CHECK_EQ(w5500_check(h), W5500_OK);
+    w5500_deinit(h);
+}
+
+static void test_retransmit(void)
+{
+    w5500_handle_t h = fixture_open();
+    uint16_t rtr = 0u;
+    uint8_t rcr = 0u;
+
+    CHECK_EQ(w5500_get_retransmit(h, &rtr, &rcr), W5500_OK);
+    CHECK_EQ(rtr, 0x07D0);
+    CHECK_EQ(rcr, 8);
+    CHECK_EQ(w5500_set_retransmit(h, 0x0BB8u, 5u), W5500_OK);
+    CHECK_EQ(w5500_get_retransmit(h, &rtr, &rcr), W5500_OK);
+    CHECK_EQ(rtr, 0x0BB8);
+    CHECK_EQ(rcr, 5);
+    CHECK_EQ(w5500_set_retransmit(h, 0u, 5u), W5500_ERR_PARAM);
+    CHECK_EQ(w5500_set_retransmit(h, 0x07D0u, 8u), W5500_OK); /* restore */
+    w5500_deinit(h);
+}
+
+static void test_open_flags(void)
+{
+    w5500_handle_t h = fixture_open();
+    w5500_socket_t s = NULL;
+
+    CHECK_EQ(w5500_socket_open_ex(h, W5500_PROTO_TCP, 5000u,
+                                  W5500_SOCK_F_NO_DELAY, evt_cb, NULL, &s),
+             W5500_OK);
+    CHECK_EQ(g_mock.sreg[0][W5500_Sn_MR], W5500_Sn_MR_TCP | W5500_Sn_MR_ND);
+    CHECK_EQ(w5500_socket_close(s), W5500_OK);
+
+    CHECK_EQ(w5500_socket_open_ex(h, W5500_PROTO_UDP, 6000u,
+                                  W5500_SOCK_F_MULTI |
+                                      W5500_SOCK_F_BROADCAST_BLOCK,
+                                  evt_cb, NULL, &s),
+             W5500_OK);
+    CHECK_EQ(g_mock.sreg[0][W5500_Sn_MR],
+             W5500_Sn_MR_UDP | W5500_Sn_MR_MULTI | W5500_Sn_MR_BCASTB);
+    CHECK_EQ(w5500_socket_close(s), W5500_OK);
+
+    /* Protocol/flag mismatches and unknown bits are rejected. */
+    CHECK_EQ(w5500_socket_open_ex(h, W5500_PROTO_TCP, 5000u,
+                                  W5500_SOCK_F_MULTI, evt_cb, NULL, &s),
+             W5500_ERR_PARAM);
+    CHECK_EQ(w5500_socket_open_ex(h, W5500_PROTO_UDP, 5000u,
+                                  W5500_SOCK_F_NO_DELAY, evt_cb, NULL, &s),
+             W5500_ERR_PARAM);
+    CHECK_EQ(w5500_socket_open_ex(h, W5500_PROTO_TCP, 5000u, 0x80u, evt_cb,
+                                  NULL, &s),
+             W5500_ERR_PARAM);
+
+    /* Plain open keeps a clean Sn_MR. */
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5000u, evt_cb, NULL, &s),
+             W5500_OK);
+    CHECK_EQ(g_mock.sreg[0][W5500_Sn_MR], W5500_Sn_MR_TCP);
+    CHECK_EQ(w5500_socket_close(s), W5500_OK);
+    w5500_deinit(h);
+}
+
+static void test_socket_options(void)
+{
+    w5500_handle_t h = fixture_open();
+    w5500_socket_t s = NULL;
+    w5500_socket_t u = NULL;
+    static const uint8_t srv[4] = {10, 0, 0, 5};
+    uint16_t mss = 0u;
+    uint8_t sr = 0u;
+
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5000u, evt_cb, NULL, &s),
+             W5500_OK);
+    CHECK_EQ(g_mock.sreg[0][W5500_Sn_TTL], 128); /* default at open */
+
+    CHECK_EQ(w5500_socket_set_ttl(s, 42u), W5500_OK);
+    CHECK_EQ(g_mock.sreg[0][W5500_Sn_TTL], 42);
+    CHECK_EQ(w5500_socket_set_tos(s, 0x10u), W5500_OK);
+    CHECK_EQ(g_mock.sreg[0][W5500_Sn_TOS], 0x10);
+
+    CHECK_EQ(w5500_socket_set_mss(s, 536u), W5500_OK);
+    CHECK_EQ(w5500_socket_get_mss(s, &mss), W5500_OK);
+    CHECK_EQ(mss, 536);
+
+    CHECK_EQ(w5500_socket_get_status(s, &sr), W5500_OK);
+    CHECK_EQ(sr, W5500_SOCK_INIT);
+
+    /* Keep-alive probe is TCP-established only. */
+    CHECK_EQ(w5500_socket_keepalive_probe(s), W5500_ERR_STATE);
+    CHECK_EQ(w5500_socket_connect(s, srv, 80u), W5500_OK);
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(w5500_socket_keepalive_probe(s), W5500_OK);
+
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_UDP, 6000u, evt_cb, NULL, &u),
+             W5500_OK);
+    CHECK_EQ(w5500_socket_keepalive_probe(u), W5500_ERR_STATE);
+
+    CHECK_EQ(w5500_socket_close(u), W5500_OK);
+    CHECK_EQ(w5500_socket_close(s), W5500_OK);
+    w5500_deinit(h);
+}
+
+static uint32_t g_delay_us_total;
+static void test_delay_us_hook(uint32_t us)
+{
+    g_delay_us_total += us;
+}
+
+static void test_delay_us_path(void)
+{
+    w5500_plat_if_t plat;
+    w5500_handle_t h = NULL;
+    w5500_socket_t s = NULL;
+    uint8_t ver = 0u;
+
+    mock_w5500_plat(&plat);
+    plat.delay_us = test_delay_us_hook;
+    CHECK_EQ(w5500_init(&h, &plat), W5500_OK);
+    CHECK_EQ(w5500_set_timeout(h, 20u), W5500_OK);
+    CHECK_EQ(w5500_get_hw_version(h, &ver), W5500_OK);
+
+    /* Healthy chip: every wait resolves on the first poll, no delay needed. */
+    g_delay_us_total = 0u;
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5000u, evt_cb, NULL, &s),
+             W5500_OK);
+    CHECK_EQ(g_delay_us_total, 0u);
+
+    /* Stuck command: still bounded by the timeout, stepped at 100 us. */
+    g_mock.cr_stuck = 1u;
+    g_delay_us_total = 0u;
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5001u, evt_cb, NULL, &s),
+             W5500_ERR_TIMEOUT);
+    CHECK(g_delay_us_total >= 20000u); /* at least the 20 ms timeout */
+    CHECK(g_delay_us_total <= 60000u); /* OPEN wait + best-effort CLOSE wait */
+    g_mock.cr_stuck = 0u;
+    w5500_deinit(h);
+}
+
+static void test_socket_buffers_asym(void)
+{
+    w5500_handle_t h = fixture_open();
+    static const uint8_t kb_ok[4] = {4, 4, 2, 2};
+    static const uint8_t kb_sum[4] = {8, 8, 1, 1}; /* 18 KB > 16 KB */
+    static const uint8_t kb_bad[4] = {4, 3, 2, 1}; /* 3 KB is not legal */
+    uint8_t i;
+
+    CHECK_EQ(w5500_set_socket_buffers(h, kb_ok), W5500_OK);
+    for (i = 0; i < 4u; i++) {
+        CHECK_EQ(g_mock.sreg[i][W5500_Sn_TXBUF_SIZE], kb_ok[i]);
+        CHECK_EQ(g_mock.sreg[i][W5500_Sn_RXBUF_SIZE], kb_ok[i]);
+    }
+    CHECK_EQ(w5500_set_socket_buffers(h, kb_sum), W5500_ERR_PARAM);
+    CHECK_EQ(w5500_set_socket_buffers(h, kb_bad), W5500_ERR_PARAM);
+    CHECK_EQ(w5500_set_socket_buffers(h, NULL), W5500_ERR_PARAM);
+    /* Rejected calls left the layout alone. */
+    CHECK_EQ(g_mock.sreg[0][W5500_Sn_TXBUF_SIZE], 4);
+    CHECK_EQ(g_mock.sreg[3][W5500_Sn_RXBUF_SIZE], 2);
+    /* Back to the chip default. */
+    CHECK_EQ(w5500_set_socket_buffer_size(h, 2u), W5500_OK);
+    w5500_deinit(h);
+}
+
+static void test_udp_zero_length(void)
+{
+    w5500_handle_t h = fixture_open();
+    w5500_socket_t s = NULL;
+    uint8_t buf[4];
+    uint16_t n = 0xFFFFu;
+
+    evt_reset();
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_UDP, 6000u, evt_cb, NULL, &s),
+             W5500_OK);
+
+    /* Datasheet: a zero-length datagram raises RECV with an empty buffer. */
+    g_mock.sreg[0][W5500_Sn_IR] |= W5500_Sn_IR_RECV;
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(g_evt_count, 1u);
+    CHECK_EQ(g_evt[0].event, W5500_EVENT_DATA_RECEIVED);
+
+    CHECK_EQ(w5500_socket_recv(s, buf, sizeof(buf), &n), W5500_OK);
+    CHECK_EQ(n, 0u);
+    CHECK_EQ(w5500_socket_rx_available(s, (uint16_t *)&n), W5500_OK);
+    CHECK_EQ(n, 0u);
+    CHECK_EQ(w5500_socket_close(s), W5500_OK);
+    w5500_deinit(h);
+}
+
 static void test_open_timeout_stuck_cr(void)
 {
     w5500_handle_t h = fixture_open();
@@ -384,9 +692,9 @@ static void test_tx_full_is_nonblocking(void)
              W5500_OK);
     CHECK_EQ(n, (uint16_t)sizeof(blob));
 
-    /* Second send must return immediately with 0 bytes accepted. */
+    /* Second send while the first SEND is in flight: refused with BUSY. */
     n = 0xFFFFu;
-    CHECK_EQ(w5500_socket_send(s, blob, 16u, &n), W5500_OK);
+    CHECK_EQ(w5500_socket_send(s, blob, 16u, &n), W5500_ERR_BUSY);
     CHECK_EQ(n, 0u);
 
     /* After SEND completes (poll consumes SEND_OK) space is free again. */
@@ -443,6 +751,17 @@ int main(void)
     test_net_config();
     test_buffer_sizes();
     test_link_status();
+    test_link_info();
+    test_link_event();
+    test_irq_pending();
+    test_ping_block();
+    test_check_identity();
+    test_retransmit();
+    test_open_flags();
+    test_socket_options();
+    test_delay_us_path();
+    test_socket_buffers_asym();
+    test_udp_zero_length();
     test_open_timeout_stuck_cr();
     test_open_rejects_bad_args();
     test_tcp_client_flow();

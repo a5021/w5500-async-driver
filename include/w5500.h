@@ -55,6 +55,7 @@ typedef struct {
     void     (*delay_ms)(uint32_t ms);                     /**< Blocking delay, used by timeout waits */
     void     (*lock)(void);                                /**< Optional mutex take */
     void     (*unlock)(void);                              /**< Optional mutex give */
+    void     (*delay_us)(uint32_t us);                     /**< Optional us delay; enables 100 us command polling */
 } w5500_plat_if_t;
 
 /* ------------------------------------------------------------------ */
@@ -99,7 +100,13 @@ void w5500_deinit(w5500_handle_t handle);
 /** Software-reset the chip (MR.RST) and wait for completion. */
 w5500_result_t w5500_sw_reset(w5500_handle_t handle);
 
-/** Read VERSIONR and verify it equals @ref W5500_HW_VERSION. */
+/**
+ * @brief Read VERSIONR and RTR to verify a healthy W5500 is on the bus.
+ *
+ * A real chip always reports VERSIONR == 0x04 and boots with the factory
+ * retransmission timer (RTR == 0x07D0). Two independent probes make a
+ * floating or miswired bus much less likely to pass by accident.
+ */
 w5500_result_t w5500_check(w5500_handle_t handle);
 
 /** Read the raw chip version from VERSIONR (0x04 for a healthy W5500). */
@@ -113,6 +120,64 @@ w5500_result_t w5500_set_timeout(w5500_handle_t handle, uint32_t timeout_ms);
 
 /** Read PHYCFGR and report link state (bit 0: LNK_ON). */
 w5500_result_t w5500_get_link_status(w5500_handle_t handle, bool *link_up);
+
+/**
+ * @brief Enable/disable the chip's ping block (MR.PB).
+ *
+ * With ping blocking on, the chip stops answering ICMP echo requests, which
+ * hides the node from LAN scanners (WIZnet recommendation for exposed
+ * devices). Off by default.
+ */
+w5500_result_t w5500_set_ping_block(w5500_handle_t handle, bool enable);
+
+/**
+ * @brief Set the TCP retransmission timer and retry count (RTR/RCR).
+ * @param rtr_100us  Retransmission timeout in 100 us units (0x07D0 = 2 s).
+ * @param rcr        Retry count (chip default 8).
+ */
+w5500_result_t w5500_set_retransmit(w5500_handle_t handle,
+                                    uint16_t rtr_100us,
+                                    uint8_t rcr);
+
+/** Read back the current RTR (100 us units) and RCR values. */
+w5500_result_t w5500_get_retransmit(w5500_handle_t handle,
+                                    uint16_t *rtr_100us,
+                                    uint8_t *rcr);
+
+/** PHY link state decoded from PHYCFGR (LNK/SPD/DPX bits). */
+typedef struct {
+    uint8_t up;          /**< 1 while LNK_ON is set */
+    uint8_t speed_100;   /**< 1 = 100BASE-TX, 0 = 10BASE-T */
+    uint8_t full_duplex; /**< 1 = full duplex */
+} w5500_link_info_t;
+
+/**
+ * @brief Link-state change callback, invoked from w5500_poll().
+ * @param handle   Driver instance the change was observed on.
+ * @param info     New link state.
+ * @param user_arg Opaque pointer passed to w5500_set_link_cb().
+ *
+ * Runs in the poll caller's context with the driver lock released, so
+ * re-entering the driver is safe.
+ */
+typedef void (*w5500_link_cb_t)(w5500_handle_t handle,
+                                const w5500_link_info_t *info,
+                                void *user_arg);
+
+/** Read PHYCFGR and decode link state, speed and duplex. */
+w5500_result_t w5500_get_link_info(w5500_handle_t handle,
+                                   w5500_link_info_t *info);
+
+/**
+ * @brief Register a link-change callback (NULL disables it).
+ *
+ * w5500_poll() samples PHYCFGR when no interrupt is pending and fires the
+ * callback once per observed LNK/SPD/DPX change. The first sample after
+ * init only establishes the baseline and never fires.
+ */
+w5500_result_t w5500_set_link_cb(w5500_handle_t handle,
+                                 w5500_link_cb_t cb,
+                                 void *user_arg);
 
 /* ------------------------------------------------------------------ */
 /* Network configuration                                              */
@@ -137,6 +202,18 @@ w5500_result_t w5500_get_gateway(w5500_handle_t handle, uint8_t gw[4]);
  */
 w5500_result_t w5500_set_socket_buffer_size(w5500_handle_t handle,
                                              uint16_t size_kb);
+
+/**
+ * @brief Configure per-socket TX/RX buffer sizes (KB), asymmetric layouts.
+ * @param kb  One size per hardware socket (1, 2, 4, 8 or 16 KB each). The
+ *            sum must not exceed the chip's 16 KB per direction. The same
+ *            size is used for TX and RX of a socket.
+ *
+ * Must be called before sockets are opened; open socket handles are
+ * invalidated on success.
+ */
+w5500_result_t w5500_set_socket_buffers(w5500_handle_t handle,
+                                        const uint8_t kb[W5500_SOCKET_COUNT]);
 
 /* ------------------------------------------------------------------ */
 /* Raw register access (advanced/debug)                               */

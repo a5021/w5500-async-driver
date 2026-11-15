@@ -185,7 +185,19 @@ static void mock_handle_cmd(uint8_t id, uint8_t cmd)
 static uint8_t mock_mem_read(uint8_t bsb, uint16_t addr)
 {
     if (bsb == W5500_BSB_COMMON) {
-        return g_mock.common[addr & 0x3Fu];
+        uint8_t off = (uint8_t)(addr & 0x3Fu);
+        if (off == (W5500_REG_SIR & 0x3Fu)) {
+            /* SIR is the OR of the per-socket Sn_IR registers (read-only). */
+            uint8_t sir = 0u;
+            uint8_t i;
+            for (i = 0; i < MOCK_MAX_SOCKS; i++) {
+                if (g_mock.sreg[i][W5500_Sn_IR] != 0u) {
+                    sir |= (uint8_t)(1u << i);
+                }
+            }
+            return sir;
+        }
+        return g_mock.common[off];
     }
     if (bsb >= 1u && bsb <= 15u) {
         uint8_t kind = (uint8_t)(bsb & 3u);
@@ -344,6 +356,7 @@ static void mock_unlock(void)
 
 void mock_w5500_plat(w5500_plat_if_t *plat)
 {
+    memset(plat, 0, sizeof(*plat));
     plat->spi_select = mock_select;
     plat->spi_deselect = mock_deselect;
     plat->spi_transfer_byte = mock_spi_byte;
@@ -351,6 +364,7 @@ void mock_w5500_plat(w5500_plat_if_t *plat)
     plat->delay_ms = mock_delay_ms;
     plat->lock = mock_lock;
     plat->unlock = mock_unlock;
+    plat->delay_us = NULL; /* 1 ms steps unless a test overrides it */
 }
 
 /* Same as mock_w5500_plat(), but enables the burst path. */

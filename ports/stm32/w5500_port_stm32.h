@@ -81,6 +81,9 @@ void w5500_port_stm32_fill_plat(w5500_plat_if_t *plat);
 /** DWT cycle-counter based blocking delay; usable standalone. */
 void w5500_port_stm32_delay_ms(uint32_t ms);
 
+/** DWT cycle-counter based microsecond delay; enables 100 us command polling. */
+void w5500_port_stm32_delay_us(uint32_t us);
+
 #ifdef __cplusplus
 }
 #endif

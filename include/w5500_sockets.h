@@ -53,6 +53,27 @@ typedef void (*w5500_event_cb_t)(w5500_socket_t sock,
                                  w5500_result_t status,
                                  void *user_arg);
 
+/** Socket open flags, mapped onto Sn_MR option bits. */
+#define W5500_SOCK_F_NO_DELAY        0x01u /**< TCP: no delayed ACK (Sn_MR.ND) */
+#define W5500_SOCK_F_MULTI           0x02u /**< UDP: multicast (Sn_MR.MULTI) */
+#define W5500_SOCK_F_BROADCAST_BLOCK 0x04u /**< UDP: drop broadcasts (Sn_MR.BCASTB) */
+
+/**
+ * @brief Open a hardware socket with option flags.
+ * @param flags  Any combination of @ref W5500_SOCK_F_NO_DELAY (TCP only),
+ *               @ref W5500_SOCK_F_MULTI and @ref W5500_SOCK_F_BROADCAST_BLOCK
+ *               (UDP only); unknown bits or flags invalid for the protocol
+ *               return W5500_ERR_PARAM.
+ * @return Same semantics as w5500_socket_open().
+ */
+w5500_result_t w5500_socket_open_ex(w5500_handle_t handle,
+                                    w5500_proto_t proto,
+                                    uint16_t local_port,
+                                    uint32_t flags,
+                                    w5500_event_cb_t cb,
+                                    void *user_arg,
+                                    w5500_socket_t *out_sock);
+
 /**
  * @brief Open a hardware socket and arm its event callback (blocking only
  *        for the OPEN command completion, bounded by the chip timeout).
@@ -93,6 +114,9 @@ w5500_result_t w5500_socket_connect(w5500_socket_t sock,
  * Transfers up to the free TX-buffer space (Sn_TX_FSR) and issues SEND.
  * @param sent  Receives how many bytes were accepted (may be 0 when the
  *              TX buffer is full; retry later or wait for SEND_DONE).
+ * @note  Only one SEND may be in flight per socket: a call made before the
+ *        previous SEND_DONE (or ERROR/DISCONNECTED) returns W5500_ERR_BUSY
+ *        with *sent == 0. Retry from the SEND_DONE callback.
  */
 w5500_result_t w5500_socket_send(w5500_socket_t sock,
                                  const uint8_t *data,
@@ -112,6 +136,11 @@ w5500_result_t w5500_socket_sendto(w5500_socket_t sock,
  *        into @c data (no intermediate driver copies), then Sn_RX_RD is
  *        advanced and RECV is issued.
  * @param recvd  Receives the number of bytes actually read (0 if none).
+ *
+ * @note A zero-length UDP datagram raises W5500_EVENT_DATA_RECEIVED but
+ *       leaves Sn_RX_RSR == 0, so w5500_socket_recv() returns 0 bytes.
+ *       Treat "event with recvd == 0" on a UDP socket as an empty datagram,
+ *       not as an error.
  */
 w5500_result_t w5500_socket_recv(w5500_socket_t sock,
                                  uint8_t *data,
@@ -144,12 +173,51 @@ w5500_result_t w5500_socket_get_peer(w5500_socket_t sock,
 w5500_result_t w5500_socket_set_keepalive(w5500_socket_t sock,
                                           uint16_t interval_5s);
 
+/** Set the IPv4 TTL for outgoing packets (Sn_TTL); default at open is 128. */
+w5500_result_t w5500_socket_set_ttl(w5500_socket_t sock, uint8_t ttl);
+
+/** Set the IPv4 TOS/DSCP byte for outgoing packets (Sn_TOS). */
+w5500_result_t w5500_socket_set_tos(w5500_socket_t sock, uint8_t tos);
+
+/** Read the TCP MSS currently in effect (Sn_MSSR; 0 = chip default). */
+w5500_result_t w5500_socket_get_mss(w5500_socket_t sock, uint16_t *mss);
+
+/** Override the TCP MSS before connect/listen (Sn_MSSR; 0 = default). */
+w5500_result_t w5500_socket_set_mss(w5500_socket_t sock, uint16_t mss);
+
+/** Read the hardware socket status register (Sn_SR). */
+w5500_result_t w5500_socket_get_status(w5500_socket_t sock, uint8_t *status);
+
+/**
+ * @brief Send an immediate TCP keep-alive probe (Sn_CR.SEND_KEEP).
+ *
+ * Only valid on an established TCP socket. Waits for the command to be
+ * accepted, bounded by the chip timeout (it does not wait for the peer's
+ * answer).
+ */
+w5500_result_t w5500_socket_keepalive_probe(w5500_socket_t sock);
+
+/**
+ * @brief Snapshot the chip interrupt summary without servicing it.
+ *
+ * Intended for INTn-pin driven designs: call from the ISR or before
+ * deciding to run w5500_poll(), then do the actual work in task context.
+ *
+ * @param ir   Common IR (CONFLICT/UNREACH/PPPoE/MP); 0 when none pending.
+ * @param sir  SIR: one bit per socket, set while that socket has Sn_IR bits.
+ */
+w5500_result_t w5500_irq_pending(w5500_handle_t handle,
+                                 uint8_t *ir,
+                                 uint8_t *sir);
+
 /**
  * @brief Service all sockets: dispatch completed events to callbacks.
  *
- * Call periodically (e.g. every 10-100 ms or on the INTn pin). Reads Sn_IR
- * of every open socket, clears handled bits, releases disconnected sockets
- * and invokes user callbacks after the driver lock is released.
+ * Call periodically (e.g. every 10-100 ms or on the INTn pin). Reads SIR
+ * once, then only the Sn_IR of sockets with a pending summary bit, clears
+ * handled bits, releases disconnected sockets and invokes user callbacks
+ * after the driver lock is released. When no interrupt is pending the PHY
+ * is sampled for link changes (see w5500_set_link_cb()).
  */
 w5500_result_t w5500_poll(w5500_handle_t handle);
 

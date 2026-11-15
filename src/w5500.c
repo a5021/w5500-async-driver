@@ -171,6 +171,8 @@ w5500_result_t w5500_wait_reg_clear(w5500_handle_t h, uint16_t addr,
                                     uint8_t bsb, uint8_t mask)
 {
     uint32_t elapsed = 0u;
+    uint32_t elapsed_us = 0u;
+    uint32_t timeout_us = h->timeout_ms * 1000u;
 
     for (;;) {
         uint8_t val = 0xFFu;
@@ -180,6 +182,14 @@ w5500_result_t w5500_wait_reg_clear(w5500_handle_t h, uint16_t addr,
         }
         if ((val & mask) == 0u) {
             return W5500_OK;
+        }
+        if (h->plat.delay_us != NULL) {
+            if (elapsed_us >= timeout_us) {
+                return W5500_ERR_TIMEOUT;
+            }
+            h->plat.delay_us(100u);
+            elapsed_us += 100u;
+            continue;
         }
         if (elapsed >= h->timeout_ms) {
             return W5500_ERR_TIMEOUT;
@@ -195,6 +205,8 @@ w5500_result_t w5500_wait_reg_eq(w5500_handle_t h, uint16_t addr,
                                  uint8_t bsb, uint8_t expect)
 {
     uint32_t elapsed = 0u;
+    uint32_t elapsed_us = 0u;
+    uint32_t timeout_us = h->timeout_ms * 1000u;
 
     for (;;) {
         uint8_t val = 0xFFu;
@@ -204,6 +216,14 @@ w5500_result_t w5500_wait_reg_eq(w5500_handle_t h, uint16_t addr,
         }
         if (val == expect) {
             return W5500_OK;
+        }
+        if (h->plat.delay_us != NULL) {
+            if (elapsed_us >= timeout_us) {
+                return W5500_ERR_TIMEOUT;
+            }
+            h->plat.delay_us(100u);
+            elapsed_us += 100u;
+            continue;
         }
         if (elapsed >= h->timeout_ms) {
             return W5500_ERR_TIMEOUT;
@@ -238,6 +258,7 @@ static void w5500_context_reset(struct w5500_context *ctx, uint8_t owns_mem)
     memset(ctx, 0, sizeof(*ctx));
     ctx->timeout_ms = W5500_DEFAULT_TIMEOUT_MS;
     ctx->owns_mem = owns_mem;
+    ctx->link_snapshot = 0xFFu; /* no baseline observed yet */
     for (i = 0; i < W5500_SOCKET_COUNT; i++) {
         ctx->sockets[i].owner = ctx;
         ctx->sockets[i].id = i;
@@ -354,11 +375,81 @@ w5500_result_t w5500_get_hw_version(w5500_handle_t handle, uint8_t *version)
 w5500_result_t w5500_check(w5500_handle_t handle)
 {
     uint8_t ver = 0u;
+    uint16_t rtr = 0u;
     w5500_result_t rc = w5500_get_hw_version(handle, &ver);
+
     if (rc != W5500_OK) {
         return rc;
     }
-    return (ver == W5500_HW_VERSION) ? W5500_OK : W5500_ERR_CHIP;
+    if (ver != W5500_HW_VERSION) {
+        return W5500_ERR_CHIP;
+    }
+    /* Second, independent identity probe: RTR always boots at 0x07D0. */
+    w5500_lock(handle);
+    rc = w5500_read16(handle, W5500_REG_RTR, W5500_BSB_COMMON, &rtr);
+    w5500_unlock(handle);
+    if (rc != W5500_OK) {
+        return rc;
+    }
+    return (rtr == W5500_RTR_DEFAULT) ? W5500_OK : W5500_ERR_CHIP;
+}
+
+w5500_result_t w5500_set_ping_block(w5500_handle_t handle, bool enable)
+{
+    uint8_t mr = 0u;
+    w5500_result_t rc;
+
+    if (handle == NULL) {
+        return W5500_ERR_PARAM;
+    }
+    w5500_lock(handle);
+    rc = w5500_read8(handle, W5500_REG_MR, W5500_BSB_COMMON, &mr);
+    if (rc == W5500_OK) {
+        if (enable) {
+            mr = (uint8_t)(mr | W5500_MR_PB);
+        } else {
+            mr = (uint8_t)(mr & (uint8_t)~W5500_MR_PB);
+        }
+        rc = w5500_write8(handle, W5500_REG_MR, W5500_BSB_COMMON, mr);
+    }
+    w5500_unlock(handle);
+    return rc;
+}
+
+w5500_result_t w5500_set_retransmit(w5500_handle_t handle,
+                                    uint16_t rtr_100us,
+                                    uint8_t rcr)
+{
+    w5500_result_t rc;
+
+    if (handle == NULL || rtr_100us == 0u) {
+        return W5500_ERR_PARAM;
+    }
+    w5500_lock(handle);
+    rc = w5500_write16(handle, W5500_REG_RTR, W5500_BSB_COMMON, rtr_100us);
+    if (rc == W5500_OK) {
+        rc = w5500_write8(handle, W5500_REG_RCR, W5500_BSB_COMMON, rcr);
+    }
+    w5500_unlock(handle);
+    return rc;
+}
+
+w5500_result_t w5500_get_retransmit(w5500_handle_t handle,
+                                    uint16_t *rtr_100us,
+                                    uint8_t *rcr)
+{
+    w5500_result_t rc;
+
+    if (handle == NULL || rtr_100us == NULL || rcr == NULL) {
+        return W5500_ERR_PARAM;
+    }
+    w5500_lock(handle);
+    rc = w5500_read16(handle, W5500_REG_RTR, W5500_BSB_COMMON, rtr_100us);
+    if (rc == W5500_OK) {
+        rc = w5500_read8(handle, W5500_REG_RCR, W5500_BSB_COMMON, rcr);
+    }
+    w5500_unlock(handle);
+    return rc;
 }
 
 w5500_result_t w5500_set_timeout(w5500_handle_t handle, uint32_t timeout_ms)
@@ -387,6 +478,41 @@ w5500_result_t w5500_get_link_status(w5500_handle_t handle, bool *link_up)
         *link_up = ((phy & W5500_PHYCFGR_LNK_ON) != 0u);
     }
     return rc;
+}
+
+w5500_result_t w5500_get_link_info(w5500_handle_t handle,
+                                   w5500_link_info_t *info)
+{
+    uint8_t phy = 0u;
+    w5500_result_t rc;
+
+    if (handle == NULL || info == NULL) {
+        return W5500_ERR_PARAM;
+    }
+    w5500_lock(handle);
+    rc = w5500_read8(handle, W5500_REG_PHYCFGR, W5500_BSB_COMMON, &phy);
+    w5500_unlock(handle);
+    if (rc != W5500_OK) {
+        return rc;
+    }
+    info->up = (uint8_t)((phy & W5500_PHYCFGR_LNK_ON) != 0u);
+    info->speed_100 = (uint8_t)((phy & W5500_PHYCFGR_SPD_100) != 0u);
+    info->full_duplex = (uint8_t)((phy & W5500_PHYCFGR_DPX_FULL) != 0u);
+    return W5500_OK;
+}
+
+w5500_result_t w5500_set_link_cb(w5500_handle_t handle,
+                                 w5500_link_cb_t cb,
+                                 void *user_arg)
+{
+    if (handle == NULL) {
+        return W5500_ERR_PARAM;
+    }
+    w5500_lock(handle);
+    handle->link_cb = cb;
+    handle->link_user = user_arg;
+    w5500_unlock(handle);
+    return W5500_OK;
 }
 
 /* ------------------------------------------------------------------ */
@@ -464,29 +590,36 @@ static int w5500_buf_size_valid(uint16_t kb)
     return (kb == 1u || kb == 2u || kb == 4u || kb == 8u || kb == 16u);
 }
 
-w5500_result_t w5500_set_socket_buffer_size(w5500_handle_t handle,
-                                             uint16_t size_kb)
+w5500_result_t w5500_set_socket_buffers(w5500_handle_t handle,
+                                        const uint8_t kb[W5500_SOCKET_COUNT])
 {
     uint8_t i;
+    uint32_t total = 0u;
     w5500_result_t rc = W5500_OK;
 
-    if (handle == NULL || !w5500_buf_size_valid(size_kb)) {
+    if (handle == NULL || kb == NULL) {
         return W5500_ERR_PARAM;
     }
-    /* 4 sockets x size_kb must fit into 16 KB per direction. */
-    if ((uint32_t)size_kb * W5500_SOCKET_COUNT > 16u) {
+    for (i = 0; i < W5500_SOCKET_COUNT; i++) {
+        if (!w5500_buf_size_valid(kb[i])) {
+            return W5500_ERR_PARAM;
+        }
+        total += kb[i];
+    }
+    /* The 16 KB RX and 16 KB TX memories are shared by the four sockets. */
+    if (total > 16u) {
         return W5500_ERR_PARAM;
     }
 
     w5500_lock(handle);
     for (i = 0; i < W5500_SOCKET_COUNT; i++) {
         rc = w5500_write8(handle, W5500_Sn_TXBUF_SIZE, W5500_BSB_SREG(i),
-                          (uint8_t)size_kb);
+                          kb[i]);
         if (rc != W5500_OK) {
             break;
         }
         rc = w5500_write8(handle, W5500_Sn_RXBUF_SIZE, W5500_BSB_SREG(i),
-                          (uint8_t)size_kb);
+                          kb[i]);
         if (rc != W5500_OK) {
             break;
         }
@@ -496,12 +629,28 @@ w5500_result_t w5500_set_socket_buffer_size(w5500_handle_t handle,
         for (i = 0; i < W5500_SOCKET_COUNT; i++) {
             handle->sockets[i].in_use = 0u;
             handle->sockets[i].state = W5500_SSR_FREE;
+            handle->sockets[i].send_pending = 0u;
             handle->sockets[i].cb = NULL;
             handle->sockets[i].user_arg = NULL;
         }
     }
     w5500_unlock(handle);
     return rc;
+}
+
+w5500_result_t w5500_set_socket_buffer_size(w5500_handle_t handle,
+                                             uint16_t size_kb)
+{
+    uint8_t kb[W5500_SOCKET_COUNT];
+    uint8_t i;
+
+    if (!w5500_buf_size_valid(size_kb)) {
+        return W5500_ERR_PARAM;
+    }
+    for (i = 0; i < W5500_SOCKET_COUNT; i++) {
+        kb[i] = (uint8_t)size_kb;
+    }
+    return w5500_set_socket_buffers(handle, kb);
 }
 
 /* ------------------------------------------------------------------ */

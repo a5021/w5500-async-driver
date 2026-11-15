@@ -20,8 +20,9 @@
  *
  * Properties:
  *   1. *sent <= len on success; W5500_ERR_TIMEOUT means the SEND command
- *      never completed, so *sent must be 0; protocol/state mismatches are
- *      W5500_ERR_STATE without touching *sent.
+ *      never completed, so *sent must be 0; W5500_ERR_BUSY means a previous
+ *      SEND is still in flight, so *sent must also be 0; protocol/state
+ *      mismatches are W5500_ERR_STATE without touching *sent.
  *   2. *recvd <= len and <= injected bytes; RX_RSR always equals the
  *      tracked pending count (including the bytes the driver consumed
  *      right before a stuck RECV command timed out).
@@ -147,6 +148,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                 if (sent != 0u) {
                     abort(); /* SEND never completed: nothing accepted */
                 }
+            } else if (rc == W5500_ERR_BUSY) {
+                if (sent != 0u) {
+                    abort(); /* previous SEND in flight: nothing accepted */
+                }
             } else if (rc == W5500_ERR_PARAM) {
                 if (len != 0u) {
                     abort(); /* only a zero length can produce PARAM here */
@@ -204,6 +209,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             } else if (rc == W5500_ERR_TIMEOUT) {
                 if (sent != 0u) {
                     abort();
+                }
+            } else if (rc == W5500_ERR_BUSY) {
+                if (sent != 0u) {
+                    abort(); /* previous SEND in flight: nothing accepted */
                 }
             } else if (rc == W5500_ERR_PARAM) {
                 if (len != 0u) {
