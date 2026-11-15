@@ -349,6 +349,10 @@ w5500_result_t w5500_socket_send(w5500_socket_t sock,
     if (sock->proto != W5500_Sn_MR_TCP || sock->state != W5500_SSR_ESTABLISHED) {
         return W5500_ERR_STATE;
     }
+    /* Argument errors take precedence over the in-flight guard. */
+    if (data == NULL || sent == NULL || len == 0u) {
+        return W5500_ERR_PARAM;
+    }
 
     w5500_lock(sock->owner);
     if (sock->send_pending != 0u) {
@@ -377,6 +381,10 @@ w5500_result_t w5500_socket_sendto(w5500_socket_t sock,
     }
     if (sock->proto != W5500_Sn_MR_UDP) {
         return W5500_ERR_STATE;
+    }
+    /* Argument errors take precedence over the in-flight guard. */
+    if (data == NULL || sent == NULL || len == 0u) {
+        return W5500_ERR_PARAM;
     }
 
     h = sock->owner;
