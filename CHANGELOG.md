@@ -19,6 +19,19 @@ versioning: [Semantic Versioning](https://semver.org/).
 - Documentation set: `docs/architecture.md`, `docs/api.md`,
   `docs/protocols.md`, `examples/README.md`, `ports/README.md`,
   `CONTRIBUTING.md`.
+- `examples/host_mock_demo`: the full DHCP -> DNS -> TCP flow executed
+  against the emulator; `make examples` now builds and runs it in CI.
+- `examples/stm32f4_bench` plus `w5500_port_stm32_cycles()`: cycle-count
+  measurements for check, send staging and idle polling.
+- CI: gcc and clang matrix for `make test`/`make examples`, plus a gcov
+  coverage artifact.
+
+### Fixed
+- Data followed by a peer FIN is no longer lost: the driver keeps the socket
+  alive, delivers `DATA_RECEIVED`, and reports `DISCONNECTED` only after the
+  RX buffer is drained.
+- A lost `SEND_OK` interrupt can no longer wedge a socket in `ERR_BUSY`: the
+  TX read/write counters are used to finish the send and emit `SEND_DONE`.
 
 ### Fixed
 - `open_ex`: Sn_MR option flags (ND/MULTI/BCASTB/MC) no longer leak into the
@@ -26,6 +39,10 @@ versioning: [Semantic Versioning](https://semver.org/).
   return `W5500_ERR_STATE` by mistake.
 - The Modbus client parses replies with a dedicated parser
   (`mb_parse_response`): a reply has a different MBAP layout than a request.
+
+### Changed
+- UDP sockets no longer read `Sn_SR` during `w5500_poll()`: UDP has no
+  passive close, so one SPI read per socket per poll is saved.
 
 ## [0.5.0] - 2026-11-15
 

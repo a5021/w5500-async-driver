@@ -47,9 +47,9 @@ Four hardware sockets are tracked in a fixed array inside the context.
 
 1. It reads the chip-wide `SIR` (one socket summary bit per slot) and the
    common `IR` under the driver lock.
-2. Only sockets with their SIR bit set have `Sn_IR` read. Sockets without a
-   pending bit fall back to a single `Sn_SR` read so passive closes are still
-   noticed.
+2. Only sockets with their SIR bit set have `Sn_IR` read. TCP sockets without
+   a pending bit fall back to a single `Sn_SR` read so passive closes are still
+   noticed; UDP sockets skip it entirely (UDP has no passive close).
 3. Events are queued into a fixed array (`W5500_POLL_MAX_EVENTS = 16`, four
    per socket). Events beyond the cap are dropped - a slot can produce at
    most four per call, so this only matters for abnormal chip behaviour.
@@ -59,6 +59,17 @@ Four hardware sockets are tracked in a fixed array inside the context.
 5. When neither `IR` nor `SIR` was pending, `PHYCFGR` is sampled. A change in
    `LNK/SPD/DPX` updates the stored snapshot and fires the link callback
    (also outside the lock). The first sample only establishes the baseline.
+
+Half-close handling: when the peer sends data followed by FIN, the chip
+raises `RECV` and `DISCON` together. The driver keeps the slot alive, delivers
+`DATA_RECEIVED`, and only closes the socket, releases the slot and reports
+`DISCONNECTED` after the RX buffer has been drained (normally on the next
+poll). Data is never dropped on a FIN.
+
+Lost-interrupt recovery: if `SEND_OK` is missed (chip reset, a link flap in
+the middle of a send), the socket would otherwise stay `ERR_BUSY` forever.
+When a SEND is pending and `Sn_TX_RD == Sn_TX_WR`, the driver treats the frame
+as delivered, clears the guard and emits `SEND_DONE` itself.
 
 Ordering rule: call `w5500_poll()` before the protocol polls
 (`w5500_dhcp_poll()`, ...) in the same iteration, so pending `SEND_DONE`
@@ -138,6 +149,10 @@ These are the properties the test suite and fuzzers enforce:
    Sn_CR command, Sn_IR write-1-to-clear, computed FSR/RSR, absent blocks).
 6. A read on a valid handle only fails for `len == 0`.
 7. Protocol callbacks fire exactly once per completed request.
+8. Data followed by a peer FIN is delivered before `DISCONNECTED`; the slot
+   stays claimable until the RX buffer is empty.
+9. A lost `SEND_OK` cannot wedge a socket: the driver recovers the guard from
+   the TX counters and emits `SEND_DONE`.
 
 ## Testing strategy
 

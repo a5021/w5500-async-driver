@@ -63,10 +63,12 @@ Fuzzing modes:
 
 ## CI
 
-`.github/workflows/ci.yml` runs `make test`, `make examples` and the fuzz
-suite on every push/PR to `main`. `.github/workflows/nightly.yml` runs a
-300-second campaign per harness over the cached corpus. A red CI is a blocker;
-pull requests should reference the issue they fix.
+`.github/workflows/ci.yml` runs `make test`, `make examples` (which executes
+the emulator demo) and the fuzz suite on every push/PR to `main`, for both gcc
+and clang; the gcc leg also produces a gcov coverage artifact.
+`.github/workflows/nightly.yml` runs a 300-second campaign per harness over the
+cached corpus. A red CI is a blocker; pull requests should reference the issue
+they fix.
 
 ## License
 

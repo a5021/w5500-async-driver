@@ -75,7 +75,9 @@ network controller. One repository for every development stage (see
 │   ├── stm32f4_baremetal/  # TCP client without an OS
 │   ├── stm32f4_freertos/   # TCP echo server under FreeRTOS
 │   ├── stm32f4_dhcp_dns/   # DHCP -> DNS -> TCP without an OS
-│   └── stm32f4_modbus_server/ # Modbus TCP server (FC 3/4/6/16)
+│   ├── stm32f4_modbus_server/ # Modbus TCP server (FC 3/4/6/16)
+│   ├── stm32f4_bench/      # Cycle-count benchmark (DWT)
+│   └── host_mock_demo/     # Full stack against the emulator (runs in CI)
 ├── tests/                # Unit tests + W5500 emulator + fuzz harnesses
 │   └── fuzz/             # 13 harnesses, corpus, dictionary (docs/fuzzing.md)
 ├── docs/                 # Architecture, API, protocols, fuzzing, stages
@@ -151,10 +153,13 @@ int main(void)
 Full examples: [examples/stm32f4_baremetal](examples/stm32f4_baremetal/main.c),
 [examples/stm32f4_freertos](examples/stm32f4_freertos/main.c),
 [examples/stm32f4_dhcp_dns](examples/stm32f4_dhcp_dns/main.c),
-[examples/stm32f4_modbus_server](examples/stm32f4_modbus_server/main.c).
-Firmware examples are syntax-checked by CI through `make examples`
-(`clang -fsyntax-only`), because the STM32 port needs no vendor headers.
-See [examples/README.md](examples/README.md) for a per-example overview.
+[examples/stm32f4_modbus_server](examples/stm32f4_modbus_server/main.c),
+[examples/stm32f4_bench](examples/stm32f4_bench/main.c).
+The host demo [examples/host_mock_demo](examples/host_mock_demo/main.c) runs
+the whole stack against the emulator and is executed by `make examples` in CI;
+the firmware examples are syntax-checked (`clang -fsyntax-only`) because the
+STM32 port needs no vendor headers. See
+[examples/README.md](examples/README.md) for a per-example overview.
 
 ## DHCP and DNS quick start
 
@@ -216,7 +221,7 @@ emulator (no hardware required):
 
 ```sh
 make test      # three unit-test binaries (-Wall -Wextra -std=c99 -Werror)
-make examples  # syntax-check the firmware examples
+make examples  # run the emulator demo, syntax-check the firmware examples
 make lib       # build/libw5500.a
 make fuzz-all  # 13 fuzz harnesses (Clang + libFuzzer + ASan/UBSan)
 ```

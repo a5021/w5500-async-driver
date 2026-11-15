@@ -127,6 +127,15 @@ Callback signature: `void (*)(w5500_socket_t, w5500_event_t,
 w5500_result_t status, void *user_arg)`. `status` carries `ERR_TIMEOUT` for a
 chip TIMEOUT and `OK` otherwise.
 
+Notes:
+
+- If the peer sends data and then closes, `DATA_RECEIVED` arrives first with
+  the slot still usable; `DISCONNECTED` follows after the RX buffer is
+  drained (next poll).
+- If `SEND_DONE` is lost (chip reset, link flap during a send), `poll()`
+  recovers the in-flight guard from `Sn_TX_RD`/`Sn_TX_WR` and emits
+  `SEND_DONE` on its own.
+
 ## DHCP (`include/w5500_dhcp.h`)
 
 | Function | Purpose |

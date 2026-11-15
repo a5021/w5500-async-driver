@@ -6,13 +6,16 @@
 | [stm32f4_freertos](stm32f4_freertos/main.c) | TCP echo server under FreeRTOS, RTOS mutex hooks, one network task owning `w5500_poll()` | no (needs FreeRTOS headers) |
 | [stm32f4_dhcp_dns](stm32f4_dhcp_dns/main.c) | DHCP lease -> DNS resolve -> TCP request, static protocol storage, link-loss recovery | yes (`make examples`) |
 | [stm32f4_modbus_server](stm32f4_modbus_server/main.c) | Modbus TCP server (FC 3/4/6/16), callback register map, live values in FC 4, restarts on link-up | yes (`make examples`) |
+| [stm32f4_bench](stm32f4_bench/main.c) | Cycle-count benchmarks for check, send staging and idle poll (DWT) | syntax only |
+| [host_mock_demo](host_mock_demo/main.c) | Whole stack on the host against the emulator: DHCP -> DNS -> TCP, asserted | yes (built and executed by `make examples`) |
 
 ## Building
 
 The firmware examples are not built by the host Makefile: they need the CMSIS
 device headers and a startup file from your firmware project. `make examples`
-runs `clang -fsyntax-only` over the three CMSIS-free examples, which is what
-CI checks; the FreeRTOS example additionally needs the FreeRTOS headers.
+builds and runs the emulator demo (`host_mock_demo`, an end-to-end API check)
+and runs `clang -fsyntax-only` over the CMSIS-free firmware examples; the
+FreeRTOS example additionally needs the FreeRTOS headers.
 
 To use one in a project:
 
