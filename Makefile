@@ -13,9 +13,10 @@ CFLAGS  ?= -Wall -Wextra -std=c99 -Werror -g
 CPPFLAGS = -Iinclude -Isrc
 
 BUILD    := build
-CORE_SRC := src/w5500.c src/w5500_sockets.c src/w5500_dhcp.c src/w5500_dns.c
+CORE_SRC := src/w5500.c src/w5500_sockets.c src/w5500_dhcp.c src/w5500_dns.c \
+            src/w5500_sntp.c
 CORE_OBJ := $(BUILD)/w5500.o $(BUILD)/w5500_sockets.o $(BUILD)/w5500_dhcp.o \
-            $(BUILD)/w5500_dns.o
+            $(BUILD)/w5500_dns.o $(BUILD)/w5500_sntp.o
 
 .PHONY: all test lib clean
 
@@ -39,6 +40,10 @@ $(BUILD)/w5500_dhcp.o: src/w5500_dhcp.c src/w5500_dhcp_internal.h \
 
 $(BUILD)/w5500_dns.o: src/w5500_dns.c src/w5500_dns_internal.h \
                       include/w5500_dns.h include/w5500_sockets.h | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
+$(BUILD)/w5500_sntp.o: src/w5500_sntp.c src/w5500_sntp_internal.h \
+                       include/w5500_sntp.h include/w5500_sockets.h | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
 $(BUILD)/libw5500.a: $(CORE_OBJ)
@@ -115,7 +120,7 @@ endef
 
 .PHONY: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
         fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns \
-        fuzz-dhcp-state fuzz-dns-state fuzz-all
+        fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-all
 
 $(FUZZ_OUT):
 	mkdir -p $@
@@ -175,6 +180,11 @@ fuzz-dns-state: | $(FUZZ_OUT)
 	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_dns_state.exe
 	$(call run_fuzz,fuzz_dns_state)
 
+fuzz-sntp: | $(FUZZ_OUT)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_sntp.c $(FUZZ_SRC) \
+	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_sntp.exe
+	$(call run_fuzz,fuzz_sntp)
+
 fuzz-all: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
           fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns \
-          fuzz-dhcp-state fuzz-dns-state
+          fuzz-dhcp-state fuzz-dns-state fuzz-sntp

@@ -11,8 +11,10 @@
 #include "w5500_registers.h"
 #include "w5500_dhcp.h"
 #include "w5500_dns.h"
+#include "w5500_sntp.h"
 #include "../src/w5500_dhcp_internal.h"
 #include "../src/w5500_dns_internal.h"
+#include "../src/w5500_sntp_internal.h"
 #include "mock_w5500.h"
 
 static int g_failures = 0;
@@ -464,6 +466,99 @@ static void test_dns_timeout(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* SNTP                                                                */
+/* ------------------------------------------------------------------ */
+
+static unsigned g_sntp_results;
+static uint32_t g_sntp_time;
+static w5500_result_t g_sntp_status;
+
+static void sntp_cb(w5500_sntp_t *sntp, uint32_t unix_time,
+                    w5500_result_t status, void *arg)
+{
+    (void)sntp;
+    (void)arg;
+    g_sntp_results++;
+    g_sntp_status = status;
+    g_sntp_time = unix_time;
+}
+
+static void build_sntp_reply(uint8_t *b, uint32_t unix_time)
+{
+    uint32_t ntp = unix_time + W5500_SNTP_UNIX_DELTA;
+
+    memset(b, 0, W5500_SNTP_PKT_LEN);
+    b[0] = 0x24u; /* LI 0, VN 4, mode 4 (server) */
+    b[1] = 2u;    /* stratum */
+    b[40] = (uint8_t)(ntp >> 24);
+    b[41] = (uint8_t)(ntp >> 16);
+    b[42] = (uint8_t)(ntp >> 8);
+    b[43] = (uint8_t)ntp;
+}
+
+static void test_sntp_parse(void)
+{
+    uint8_t pkt[W5500_SNTP_PKT_LEN];
+    uint32_t t = 0u;
+
+    build_sntp_reply(pkt, 1700000000u);
+    CHECK_EQ(w5500_sntp_parse_response(pkt, sizeof(pkt), &t), 0);
+    CHECK_EQ(t, 1700000000u);
+
+    pkt[0] = 0x23u; /* mode 3: client reply, not a server answer */
+    CHECK_EQ(w5500_sntp_parse_response(pkt, sizeof(pkt), &t), -1);
+    build_sntp_reply(pkt, 1700000000u);
+    pkt[1] = 0u; /* kiss-of-death */
+    CHECK_EQ(w5500_sntp_parse_response(pkt, sizeof(pkt), &t), -1);
+    build_sntp_reply(pkt, 1700000000u);
+    memset(pkt + 40, 0, 4);
+    CHECK_EQ(w5500_sntp_parse_response(pkt, sizeof(pkt), &t), -1);
+    build_sntp_reply(pkt, 1700000000u);
+    CHECK_EQ(w5500_sntp_parse_response(pkt, 47u, &t), -1);
+    CHECK_EQ(w5500_sntp_parse_response(NULL, sizeof(pkt), &t), -1);
+}
+
+static void test_sntp_flow(void)
+{
+    static uint8_t mem[1024];
+    w5500_handle_t h = fixture_open();
+    w5500_sntp_t *s = NULL;
+    static const uint8_t server[4] = {192, 168, 1, 1};
+    uint8_t pkt[W5500_SNTP_PKT_LEN];
+
+    CHECK(w5500_sntp_size() <= sizeof(mem));
+    g_sntp_results = 0u;
+    CHECK_EQ(w5500_sntp_init(&s, mem, sizeof(mem), h, server, sntp_cb, NULL),
+             W5500_OK);
+    CHECK_EQ(w5500_sntp_start(s, 0u), W5500_OK);
+    CHECK_EQ(g_mock.last_sent_len[0], W5500_SNTP_PKT_LEN);
+    CHECK_EQ(g_mock.last_sent[0][0] & 0x07u, 3u); /* client mode */
+
+    CHECK_EQ(w5500_poll(h), W5500_OK); /* clear SEND_DONE */
+
+    build_sntp_reply(pkt, 1700000000u);
+    mock_w5500_inject_rx(0, pkt, sizeof(pkt));
+    CHECK_EQ(w5500_sntp_poll(s, 0u), W5500_OK);
+    CHECK_EQ(g_sntp_results, 1u);
+    CHECK_EQ(g_sntp_status, W5500_OK);
+    CHECK_EQ(g_sntp_time, 1700000000u);
+
+    /* No answer: 3 attempts 2 s apart, then TIMEOUT. */
+    CHECK_EQ(w5500_sntp_start(s, 0u), W5500_OK);
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(w5500_sntp_poll(s, 2000u), W5500_OK);
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(w5500_sntp_poll(s, 4000u), W5500_OK);
+    CHECK_EQ(w5500_sntp_poll(s, 6000u), W5500_OK);
+    CHECK_EQ(g_sntp_results, 2u);
+    CHECK_EQ(g_sntp_status, W5500_ERR_TIMEOUT);
+
+    w5500_sntp_stop(s);
+    w5500_deinit(h);
+    CHECK_EQ(g_mock.lock_count, g_mock.unlock_count);
+}
+
+/* ------------------------------------------------------------------ */
 
 int main(void)
 {
@@ -473,6 +568,8 @@ int main(void)
     test_dns_parse();
     test_dns_query_and_answer();
     test_dns_timeout();
+    test_sntp_parse();
+    test_sntp_flow();
 
     if (g_failures == 0) {
         printf("OK: all protocol tests passed\n");
