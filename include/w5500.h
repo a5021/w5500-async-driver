@@ -221,6 +221,19 @@ w5500_result_t w5500_set_socket_buffer_size(w5500_handle_t handle,
 w5500_result_t w5500_set_socket_buffers(w5500_handle_t handle,
                                         const uint8_t kb[W5500_SOCKET_COUNT]);
 
+/**
+ * @brief Configure TX and RX buffer sizes independently.
+ * @param tx_kb  Per-socket TX size in KB (1, 2, 4, 8, 16); sum <= 16.
+ * @param rx_kb  Per-socket RX size in KB (1, 2, 4, 8, 16); sum <= 16.
+ *
+ * The 16 KB TX and 16 KB RX memories are independent, so e.g. a
+ * streaming TX-heavy socket can take 8 KB while its peers take 2 KB each.
+ */
+w5500_result_t w5500_set_socket_buffers_ex(
+    w5500_handle_t handle,
+    const uint8_t tx_kb[W5500_SOCKET_COUNT],
+    const uint8_t rx_kb[W5500_SOCKET_COUNT]);
+
 /* ------------------------------------------------------------------ */
 /* Raw register access (advanced/debug)                               */
 /* ------------------------------------------------------------------ */

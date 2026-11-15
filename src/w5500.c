@@ -590,36 +590,41 @@ static int w5500_buf_size_valid(uint16_t kb)
     return (kb == 1u || kb == 2u || kb == 4u || kb == 8u || kb == 16u);
 }
 
-w5500_result_t w5500_set_socket_buffers(w5500_handle_t handle,
-                                        const uint8_t kb[W5500_SOCKET_COUNT])
+w5500_result_t w5500_set_socket_buffers_ex(
+    w5500_handle_t handle,
+    const uint8_t tx_kb[W5500_SOCKET_COUNT],
+    const uint8_t rx_kb[W5500_SOCKET_COUNT])
 {
     uint8_t i;
-    uint32_t total = 0u;
+    uint32_t tx_total = 0u;
+    uint32_t rx_total = 0u;
     w5500_result_t rc = W5500_OK;
 
-    if (handle == NULL || kb == NULL) {
+    if (handle == NULL || tx_kb == NULL || rx_kb == NULL) {
         return W5500_ERR_PARAM;
     }
     for (i = 0; i < W5500_SOCKET_COUNT; i++) {
-        if (!w5500_buf_size_valid(kb[i])) {
+        if (!w5500_buf_size_valid(tx_kb[i]) ||
+            !w5500_buf_size_valid(rx_kb[i])) {
             return W5500_ERR_PARAM;
         }
-        total += kb[i];
+        tx_total += tx_kb[i];
+        rx_total += rx_kb[i];
     }
     /* The 16 KB RX and 16 KB TX memories are shared by the four sockets. */
-    if (total > 16u) {
+    if (tx_total > 16u || rx_total > 16u) {
         return W5500_ERR_PARAM;
     }
 
     w5500_lock(handle);
     for (i = 0; i < W5500_SOCKET_COUNT; i++) {
         rc = w5500_write8(handle, W5500_Sn_TXBUF_SIZE, W5500_BSB_SREG(i),
-                          kb[i]);
+                          tx_kb[i]);
         if (rc != W5500_OK) {
             break;
         }
         rc = w5500_write8(handle, W5500_Sn_RXBUF_SIZE, W5500_BSB_SREG(i),
-                          kb[i]);
+                          rx_kb[i]);
         if (rc != W5500_OK) {
             break;
         }
@@ -636,6 +641,12 @@ w5500_result_t w5500_set_socket_buffers(w5500_handle_t handle,
     }
     w5500_unlock(handle);
     return rc;
+}
+
+w5500_result_t w5500_set_socket_buffers(w5500_handle_t handle,
+                                        const uint8_t kb[W5500_SOCKET_COUNT])
+{
+    return w5500_set_socket_buffers_ex(handle, kb, kb);
 }
 
 w5500_result_t w5500_set_socket_buffer_size(w5500_handle_t handle,

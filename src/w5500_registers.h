@@ -96,6 +96,7 @@
 #define W5500_Sn_MR_ND          0x20u  /* no delayed ACK */
 #define W5500_Sn_MR_BCASTB      0x40u  /* block broadcast datagrams */
 #define W5500_Sn_MR_MULTI       0x80u
+#define W5500_Sn_MR_MC          0x08u  /* IGMP version 2 (UDP multicast) */
 
 /* Default retransmission timer value after reset (100 us units, 2 s). */
 #define W5500_RTR_DEFAULT       0x07D0u

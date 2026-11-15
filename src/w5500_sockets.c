@@ -63,15 +63,21 @@ w5500_result_t w5500_socket_open_ex(w5500_handle_t handle,
         return W5500_ERR_PARAM;
     }
     if ((flags & ~(uint32_t)(W5500_SOCK_F_NO_DELAY | W5500_SOCK_F_MULTI |
-                             W5500_SOCK_F_BROADCAST_BLOCK)) != 0u) {
+                             W5500_SOCK_F_BROADCAST_BLOCK |
+                             W5500_SOCK_F_IGMP_V2)) != 0u) {
         return W5500_ERR_PARAM; /* unknown flag bit */
     }
     if (proto == W5500_PROTO_TCP &&
-        (flags & (W5500_SOCK_F_MULTI | W5500_SOCK_F_BROADCAST_BLOCK)) != 0u) {
-        return W5500_ERR_PARAM; /* Sn_MR.MULTI/BCASTB are UDP-only */
+        (flags & (W5500_SOCK_F_MULTI | W5500_SOCK_F_BROADCAST_BLOCK |
+                  W5500_SOCK_F_IGMP_V2)) != 0u) {
+        return W5500_ERR_PARAM; /* Sn_MR.MULTI/BCASTB/MC are UDP-only */
     }
     if (proto == W5500_PROTO_UDP && (flags & W5500_SOCK_F_NO_DELAY) != 0u) {
         return W5500_ERR_PARAM; /* Sn_MR.ND is TCP-only */
+    }
+    if ((flags & W5500_SOCK_F_IGMP_V2) != 0u &&
+        (flags & W5500_SOCK_F_MULTI) == 0u) {
+        return W5500_ERR_PARAM; /* IGMPv2 only makes sense for multicast */
     }
 
     mr = (proto == W5500_PROTO_TCP) ? W5500_Sn_MR_TCP : W5500_Sn_MR_UDP;
@@ -83,6 +89,9 @@ w5500_result_t w5500_socket_open_ex(w5500_handle_t handle,
     }
     if ((flags & W5500_SOCK_F_BROADCAST_BLOCK) != 0u) {
         mr = (uint8_t)(mr | W5500_Sn_MR_BCASTB);
+    }
+    if ((flags & W5500_SOCK_F_IGMP_V2) != 0u) {
+        mr = (uint8_t)(mr | W5500_Sn_MR_MC);
     }
     expect_sr = (proto == W5500_PROTO_TCP) ? W5500_SOCK_INIT : W5500_SOCK_UDP;
 

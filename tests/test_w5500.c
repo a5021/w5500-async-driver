@@ -360,6 +360,22 @@ static void test_open_flags(void)
              W5500_OK);
     CHECK_EQ(g_mock.sreg[0][W5500_Sn_MR], W5500_Sn_MR_TCP);
     CHECK_EQ(w5500_socket_close(s), W5500_OK);
+
+    /* IGMPv2 rides on multicast sockets only. */
+    CHECK_EQ(w5500_socket_open_ex(h, W5500_PROTO_UDP, 7000u,
+                                  W5500_SOCK_F_MULTI | W5500_SOCK_F_IGMP_V2,
+                                  evt_cb, NULL, &s),
+             W5500_OK);
+    CHECK_EQ(g_mock.sreg[0][W5500_Sn_MR],
+             W5500_Sn_MR_UDP | W5500_Sn_MR_MULTI | W5500_Sn_MR_MC);
+    CHECK_EQ(w5500_socket_close(s), W5500_OK);
+    CHECK_EQ(w5500_socket_open_ex(h, W5500_PROTO_UDP, 7000u,
+                                  W5500_SOCK_F_IGMP_V2, evt_cb, NULL, &s),
+             W5500_ERR_PARAM);
+    CHECK_EQ(w5500_socket_open_ex(h, W5500_PROTO_TCP, 7000u,
+                                  W5500_SOCK_F_MULTI | W5500_SOCK_F_IGMP_V2,
+                                  evt_cb, NULL, &s),
+             W5500_ERR_PARAM);
     w5500_deinit(h);
 }
 
@@ -458,6 +474,25 @@ static void test_socket_buffers_asym(void)
     /* Rejected calls left the layout alone. */
     CHECK_EQ(g_mock.sreg[0][W5500_Sn_TXBUF_SIZE], 4);
     CHECK_EQ(g_mock.sreg[3][W5500_Sn_RXBUF_SIZE], 2);
+
+    /* Asymmetric TX/RX layout: the two 16 KB memories are independent. */
+    {
+        static const uint8_t tx_kb[4] = {8, 2, 2, 2}; /* 14 KB TX */
+        static const uint8_t rx_kb[4] = {2, 2, 4, 4}; /* 12 KB RX */
+        static const uint8_t tx_bad[4] = {8, 8, 1, 1}; /* 18 KB TX */
+
+        CHECK_EQ(w5500_set_socket_buffers_ex(h, tx_kb, rx_kb), W5500_OK);
+        for (i = 0; i < 4u; i++) {
+            CHECK_EQ(g_mock.sreg[i][W5500_Sn_TXBUF_SIZE], tx_kb[i]);
+            CHECK_EQ(g_mock.sreg[i][W5500_Sn_RXBUF_SIZE], rx_kb[i]);
+        }
+        CHECK_EQ(w5500_set_socket_buffers_ex(h, tx_bad, rx_kb),
+                 W5500_ERR_PARAM);
+        CHECK_EQ(w5500_set_socket_buffers_ex(h, tx_kb, NULL), W5500_ERR_PARAM);
+        /* The rejected request moved nothing. */
+        CHECK_EQ(g_mock.sreg[0][W5500_Sn_TXBUF_SIZE], 8);
+        CHECK_EQ(g_mock.sreg[2][W5500_Sn_RXBUF_SIZE], 4);
+    }
     /* Back to the chip default. */
     CHECK_EQ(w5500_set_socket_buffer_size(h, 2u), W5500_OK);
     w5500_deinit(h);

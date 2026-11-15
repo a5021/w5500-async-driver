@@ -57,6 +57,7 @@ typedef void (*w5500_event_cb_t)(w5500_socket_t sock,
 #define W5500_SOCK_F_NO_DELAY        0x01u /**< TCP: no delayed ACK (Sn_MR.ND) */
 #define W5500_SOCK_F_MULTI           0x02u /**< UDP: multicast (Sn_MR.MULTI) */
 #define W5500_SOCK_F_BROADCAST_BLOCK 0x04u /**< UDP: drop broadcasts (Sn_MR.BCASTB) */
+#define W5500_SOCK_F_IGMP_V2         0x08u /**< UDP+multicast: IGMPv2 (Sn_MR.MC) */
 
 /**
  * @brief Open a hardware socket with option flags.

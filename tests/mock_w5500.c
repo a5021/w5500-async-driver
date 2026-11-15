@@ -123,7 +123,7 @@ static void mock_handle_cmd(uint8_t id, uint8_t cmd)
 
     switch (cmd) {
     case W5500_Sn_CR_OPEN: {
-        uint8_t proto = g_mock.sreg[id][W5500_Sn_MR] & 0x0Fu;
+        uint8_t proto = g_mock.sreg[id][W5500_Sn_MR] & 0x07u;
         if (proto == W5500_Sn_MR_TCP) {
             *sr = W5500_SOCK_INIT;
         } else if (proto == W5500_Sn_MR_UDP) {
