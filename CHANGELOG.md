@@ -32,6 +32,8 @@ versioning: [Semantic Versioning](https://semver.org/).
   RX buffer is drained.
 - A lost `SEND_OK` interrupt can no longer wedge a socket in `ERR_BUSY`: the
   TX read/write counters are used to finish the send and emit `SEND_DONE`.
+- A fatal `TIMEOUT` no longer emits a stale `DATA_RECEIVED` for data that is
+  being discarded; the error event is the only event for that socket.
 
 ### Fixed
 - `open_ex`: Sn_MR option flags (ND/MULTI/BCASTB/MC) no longer leak into the

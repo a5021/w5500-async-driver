@@ -752,6 +752,16 @@ static void w5500_poll_one(w5500_handle_t h, w5500_socket_t sock, uint8_t sir,
     /* Write-1-to-clear the bits we are about to process. */
     (void)w5500_write8(h, W5500_Sn_IR, W5500_BSB_SREG(sock->id), ir);
 
+    /* A fatal timeout wins over everything else: no data events, no state
+       transitions, the socket is closed and released immediately. */
+    if ((ir & W5500_Sn_IR_TIMEOUT) != 0u) {
+        (void)w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_CLOSE);
+        w5500_poll_push(events, count, sock, W5500_EVENT_ERROR,
+                        W5500_ERR_TIMEOUT);
+        w5500_sock_release(sock);
+        return;
+    }
+
     if ((ir & W5500_Sn_IR_CON) != 0u) {
         sock->state = W5500_SSR_ESTABLISHED;
         w5500_poll_push(events, count, sock, W5500_EVENT_CONNECTED, W5500_OK);
@@ -765,14 +775,6 @@ static void w5500_poll_one(w5500_handle_t h, w5500_socket_t sock, uint8_t sir,
     if ((ir & W5500_Sn_IR_SENDOK) != 0u) {
         sock->send_pending = 0u;
         w5500_poll_push(events, count, sock, W5500_EVENT_SEND_DONE, W5500_OK);
-    }
-
-    if ((ir & W5500_Sn_IR_TIMEOUT) != 0u) {
-        (void)w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_CLOSE);
-        w5500_poll_push(events, count, sock, W5500_EVENT_ERROR,
-                        W5500_ERR_TIMEOUT);
-        w5500_sock_release(sock);
-        return;
     }
 
     if ((ir & W5500_Sn_IR_DISCON) != 0u) {

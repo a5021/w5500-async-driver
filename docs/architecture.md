@@ -64,7 +64,8 @@ Half-close handling: when the peer sends data followed by FIN, the chip
 raises `RECV` and `DISCON` together. The driver keeps the slot alive, delivers
 `DATA_RECEIVED`, and only closes the socket, releases the slot and reports
 `DISCONNECTED` after the RX buffer has been drained (normally on the next
-poll). Data is never dropped on a FIN.
+poll). A fatal `TIMEOUT` still wins: it closes the socket immediately and any
+buffered RX is discarded.
 
 Lost-interrupt recovery: if `SEND_OK` is missed (chip reset, a link flap in
 the middle of a send), the socket would otherwise stay `ERR_BUSY` forever.

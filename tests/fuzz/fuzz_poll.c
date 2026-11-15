@@ -248,7 +248,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             }
             p++;
             mock_w5500_remote_disconnect((uint8_t)idx);
-            if (cur != NULL && cur->proto == W5500_Sn_MR_TCP && pending != 0u) {
+            if (cur != NULL && cur->proto == W5500_Sn_MR_TCP && pending != 0u &&
+                (g_mock.sreg[idx][W5500_Sn_IR] & W5500_Sn_IR_TIMEOUT) == 0u) {
+                /* A fatal TIMEOUT still wins over preserving data. */
                 (void)do_poll(h);
                 if (g_slots[idx] == NULL) {
                     abort(); /* the slot must survive until RX is drained */
@@ -305,8 +307,10 @@ done:
         g_link_calls == 0u) {
         abort(); /* link bits changed but the callback never fired */
     }
-    /* Each poll dispatches at most W5500_SOCKET_COUNT * 4 events. */
-    if (g_events > (FUZZ_MAX_OPS + 1u) * (W5500_SOCKET_COUNT * 4u)) {
+    /* Each poll dispatches at most W5500_SOCKET_COUNT * 4 events. A script
+       step may poll twice (REMOTE_DISC polls while checking half-close), so
+       the ceiling covers two polls per step plus the baseline and flush. */
+    if (g_events > (2u * FUZZ_MAX_OPS + 2u) * (W5500_SOCKET_COUNT * 4u)) {
         abort();
     }
     fuzz_check_locks(snap);

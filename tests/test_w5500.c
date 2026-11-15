@@ -872,6 +872,32 @@ static void test_poll_read_budget(void)
     w5500_deinit(h);
 }
 
+static void test_timeout_discards_data(void)
+{
+    w5500_handle_t h = fixture_open();
+    w5500_socket_t s = NULL;
+    static const uint8_t srv[4] = {10, 0, 0, 5};
+    uint8_t buf[4];
+    uint16_t n = 0u;
+
+    evt_reset();
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5000u, evt_cb, NULL, &s),
+             W5500_OK);
+    CHECK_EQ(w5500_socket_connect(s, srv, 80u), W5500_OK);
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    evt_reset();
+
+    /* Buffered data plus a fatal TIMEOUT: the error wins, data is dropped. */
+    mock_w5500_inject_rx(0, (const uint8_t *)"xy", 2u);
+    g_mock.sreg[0][W5500_Sn_IR] |= W5500_Sn_IR_TIMEOUT;
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(g_evt_count, 1u);
+    CHECK_EQ(g_evt[0].event, W5500_EVENT_ERROR);
+    CHECK_EQ(g_evt[0].status, W5500_ERR_TIMEOUT);
+    CHECK_EQ(w5500_socket_recv(s, buf, sizeof(buf), &n), W5500_ERR_PARAM);
+    w5500_deinit(h);
+}
+
 /* ------------------------------------------------------------------ */
 
 int main(void)
@@ -896,6 +922,7 @@ int main(void)
     test_socket_buffers_asym();
     test_udp_zero_length();
     test_half_close_keeps_data();
+    test_timeout_discards_data();
     test_send_done_recovery();
     test_poll_read_budget();
     test_open_timeout_stuck_cr();
