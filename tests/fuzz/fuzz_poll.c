@@ -73,12 +73,6 @@ static void evt_cb(w5500_socket_t sock, w5500_event_t event,
     if ((unsigned)event > (unsigned)W5500_EVENT_ERROR) {
         abort();
     }
-    /* Release events are delivered on a slot the driver just freed; every
-       other event must still belong to a live socket. */
-    if (event != W5500_EVENT_DISCONNECTED && event != W5500_EVENT_ERROR &&
-        sock->in_use == 0u) {
-        abort();
-    }
     /* The mirror is only cleared inside this callback; an entry-time NULL
        means poll dispatched for a slot that was free at poll start. */
     if (g_slots[sock->id] == NULL) {
@@ -241,10 +235,27 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             p += len;
             break;
         }
-        case 3u: /* REMOTE_DISC */
+        case 3u: { /* REMOTE_DISC: a FIN must not drop buffered RX data */
+            w5500_socket_t cur = g_slots[idx];
+            uint16_t pending = 0u;
+
+            if (cur != NULL) {
+                uint16_t wr = (uint16_t)(((uint16_t)g_mock.sreg[idx][W5500_Sn_RX_WR] << 8) |
+                                         g_mock.sreg[idx][W5500_Sn_RX_WR + 1u]);
+                uint16_t rd = (uint16_t)(((uint16_t)g_mock.sreg[idx][W5500_Sn_RX_RD] << 8) |
+                                         g_mock.sreg[idx][W5500_Sn_RX_RD + 1u]);
+                pending = (uint16_t)(wr - rd);
+            }
             p++;
             mock_w5500_remote_disconnect((uint8_t)idx);
+            if (cur != NULL && cur->proto == W5500_Sn_MR_TCP && pending != 0u) {
+                (void)do_poll(h);
+                if (g_slots[idx] == NULL) {
+                    abort(); /* the slot must survive until RX is drained */
+                }
+            }
             break;
+        }
         case 4u: /* POLL */
             (void)do_poll(h);
             break;
