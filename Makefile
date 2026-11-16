@@ -76,27 +76,40 @@ $(BUILD)/test_modbus.exe: $(CORE_SRC) tests/test_modbus.c tests/mock_w5500.c | $
 	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests $(CORE_SRC) tests/test_modbus.c \
 	    tests/mock_w5500.c -o $@
 
-test: $(BUILD)/test_w5500.exe $(BUILD)/test_protocols.exe $(BUILD)/test_modbus.exe
+$(BUILD)/test_http.exe: examples/http/http.c tests/test_http.c | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) examples/http/http.c tests/test_http.c -o $@
+
+test: $(BUILD)/test_w5500.exe $(BUILD)/test_protocols.exe $(BUILD)/test_modbus.exe $(BUILD)/test_http.exe
 	./$(BUILD)/test_w5500.exe
 	./$(BUILD)/test_protocols.exe
 	./$(BUILD)/test_modbus.exe
+	./$(BUILD)/test_http.exe
 
 # Firmware examples are syntax-checked only: the STM32 port needs no vendor
-# headers, so the same sources compile on the host. The emulator demo is
-# built and executed instead, giving CI an end-to-end API check.
+# headers, so the same sources compile on the host. The emulator demos are
+# built and executed, giving CI end-to-end API checks.
 EXAMPLE_SRC := examples/stm32f4_baremetal/main.c \
                examples/stm32f4_dhcp_dns/main.c \
                examples/stm32f4_modbus_server/main.c \
-               examples/stm32f4_bench/main.c
-EXAMPLE_HOST := $(BUILD)/host_mock_demo.exe
+               examples/stm32f4_bench/main.c \
+               examples/stm32f4_http_client/main.c \
+               examples/stm32f4_http_server/main.c
+EXAMPLE_HOST_DEMOS := host_mock_demo host_http_demo
+EXAMPLE_HOST_BINS := $(foreach d,$(EXAMPLE_HOST_DEMOS),$(BUILD)/$(d).exe)
 
-$(EXAMPLE_HOST): examples/host_mock_demo/main.c $(CORE_SRC) tests/mock_w5500.c | $(BUILD)
+$(BUILD)/host_mock_demo.exe: examples/host_mock_demo/main.c $(CORE_SRC) tests/mock_w5500.c | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests examples/host_mock_demo/main.c \
 	    $(CORE_SRC) tests/mock_w5500.c -o $@
 
-examples: $(EXAMPLE_HOST)
-	./$(EXAMPLE_HOST)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -Iports/stm32 -fsyntax-only $(EXAMPLE_SRC)
+$(BUILD)/host_http_demo.exe: examples/host_http_demo/main.c examples/http/http.c $(CORE_SRC) tests/mock_w5500.c | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Iinclude -Iexamples -Itests \
+	    examples/host_http_demo/main.c examples/http/http.c $(CORE_SRC) \
+	    tests/mock_w5500.c -o $@
+
+examples: $(EXAMPLE_HOST_BINS)
+	./$(BUILD)/host_mock_demo.exe
+	./$(BUILD)/host_http_demo.exe
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Iexamples -Iports/stm32 -fsyntax-only $(EXAMPLE_SRC)
 
 clean:
 	rm -rf $(BUILD)
