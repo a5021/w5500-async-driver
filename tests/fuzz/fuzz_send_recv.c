@@ -65,6 +65,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     fuzz_lock_snap_t snap;
     w5500_proto_t proto;
     uint32_t pending = 0u;
+    uint8_t udp_header_pending = 0u;
     size_t p = 5u;
     unsigned ops = 0u;
     uint8_t ip[4];
@@ -246,11 +247,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                 if (recvd > len || recvd > pending) {
                     abort();
                 }
-                /* UDP consumes the 8-byte header in addition to the payload
-                   reported in recvd. */
+                /* UDP consumes the 8-byte header only on the first read of
+                   a datagram; partial reads continue without a header. */
                 pending -= (uint16_t)(recvd +
-                                      ((proto == W5500_PROTO_UDP && recvd > 0u)
-                                           ? 8u : 0u));
+                                      ((proto == W5500_PROTO_UDP &&
+                                        udp_header_pending != 0u) ? 8u : 0u));
+                udp_header_pending = 0u;
             } else if (rc == W5500_ERR_TIMEOUT) {
                 /* Sn_RX_RD was advanced before the stuck RECV command
                    failed, so the chip consumed exactly min(len, pending). */
@@ -274,6 +276,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             mock_w5500_inject_rx((uint8_t)g_id, data + p, len);
             /* UDP RX also carries an 8-byte header, counted in Sn_RX_RSR. */
             pending += (uint16_t)(len + ((proto == W5500_PROTO_UDP) ? 8u : 0u));
+            if (proto == W5500_PROTO_UDP && len > 0u) {
+                udp_header_pending = 1u;
+            }
             p += len;
             break;
         }

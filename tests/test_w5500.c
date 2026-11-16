@@ -526,6 +526,38 @@ static void test_udp_zero_length(void)
     w5500_deinit(h);
 }
 
+static void test_udp_partial_read(void)
+{
+    w5500_handle_t h = fixture_open();
+    w5500_socket_t s = NULL;
+    static const uint8_t datagram[4] = {1, 2, 3, 4};
+    uint8_t buf[8];
+    uint16_t n = 0u;
+
+    evt_reset();
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_UDP, 6000u, evt_cb, NULL, &s),
+             W5500_OK);
+    mock_w5500_inject_rx(0, datagram, sizeof(datagram));
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+
+    /* Read the 4-byte datagram in two chunks: the 8-byte UDP header is
+       consumed once, not per read. */
+    CHECK_EQ(w5500_socket_recv(s, buf, 2u, &n), W5500_OK);
+    CHECK_EQ(n, 2u);
+    CHECK_EQ(buf[0], 1);
+    CHECK_EQ(buf[1], 2);
+    CHECK_EQ(w5500_socket_rx_available(s, &n), W5500_OK);
+    CHECK_EQ(n, 2u);
+    CHECK_EQ(w5500_socket_recv(s, buf, sizeof(buf), &n), W5500_OK);
+    CHECK_EQ(n, 2u);
+    CHECK_EQ(buf[0], 3);
+    CHECK_EQ(buf[1], 4);
+    CHECK_EQ(w5500_socket_rx_available(s, &n), W5500_OK);
+    CHECK_EQ(n, 0u);
+    CHECK_EQ(w5500_socket_close(s), W5500_OK);
+    w5500_deinit(h);
+}
+
 static void test_open_timeout_stuck_cr(void)
 {
     w5500_handle_t h = fixture_open();
@@ -918,6 +950,7 @@ int main(void)
     test_delay_us_path();
     test_socket_buffers_asym();
     test_udp_zero_length();
+    test_udp_partial_read();
     test_half_close_keeps_data();
     test_timeout_discards_data();
     test_send_done_recovery();

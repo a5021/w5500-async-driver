@@ -104,7 +104,9 @@ events are consumed before a protocol tries to transmit again.
 - **UDP datagrams**: the W5500 prepends an 8-byte header to every datagram
   in RX memory (source IP 4, source port 2, datagram length 2); it is included
   in `Sn_RX_RSR`. `recvfrom()` reads and skips that header, uses its peer
-  address/port and limits the read to one datagram's payload. TCP instead
+  address/port and limits the read to one datagram's payload. A partial read
+  keeps the rest of the datagram in the slot (`udp_remaining`), so the next
+  `recv()` continues the payload without re-reading the header. TCP instead
   latches the peer in `Sn_DIPR`/`Sn_DPORT` before consuming data.
   A zero-length UDP datagram raises `DATA_RECEIVED` with `Sn_RX_RSR == 8`
   (header only), so `recv` returns 0 bytes - treat that as an empty datagram,

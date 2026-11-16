@@ -42,6 +42,7 @@ static void w5500_sock_release(w5500_socket_t sock)
     sock->proto = W5500_Sn_MR_CLOSE;
     sock->send_pending = 0u;
     sock->peer_closed = 0u;
+    sock->udp_remaining = 0u;
     sock->cb = NULL;
     sock->user_arg = NULL;
 }
@@ -126,6 +127,7 @@ w5500_result_t w5500_socket_open_ex(w5500_handle_t handle,
     slot->cb = cb;
     slot->user_arg = user_arg;
     slot->peer_closed = 0u;
+    slot->udp_remaining = 0u;
 
     rc = w5500_write8(handle, W5500_Sn_MR, W5500_BSB_SREG(slot->id), mr);
     if (rc == W5500_OK) {
@@ -473,7 +475,7 @@ w5500_result_t w5500_socket_recvfrom(w5500_socket_t sock,
     /* UDP datagrams carry an 8-byte header in RX memory: source IP (4),
        source port (2), datagram length (2). It is counted in Sn_RX_RSR and
        must be consumed together with the payload. */
-    if (is_udp) {
+    if (is_udp && sock->udp_remaining == 0u) {
         if (avail < 8u) {
             w5500_unlock(h);
             return W5500_ERR_STATE;
@@ -494,18 +496,27 @@ w5500_result_t w5500_socket_recvfrom(w5500_socket_t sock,
         if (port != NULL) {
             *port = (uint16_t)(((uint16_t)hdr[4] << 8) | hdr[5]);
         }
+        rd = (uint16_t)(rd + 8u); /* skip header in chip RX memory */
+        avail = payload;          /* only this datagram's payload is ours */
         if (payload == 0u) {
             /* Empty datagram: consume only the 8-byte header and finish. */
             rc = w5500_write16(h, W5500_Sn_RX_RD, W5500_BSB_SREG(sock->id),
-                               (uint16_t)(rd + 8u));
+                               (uint16_t)(rd));
             if (rc == W5500_OK) {
                 rc = w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_RECV);
             }
             w5500_unlock(h);
             return rc;
         }
-        rd = (uint16_t)(rd + 8u); /* skip header in chip RX memory */
-        avail = payload;          /* only this datagram's payload is ours */
+    }
+    if (is_udp && sock->udp_remaining != 0u) {
+        /* A previous call read part of this datagram: its header was already
+           consumed, so the remaining bytes start at Sn_RX_RD. */
+        if (sock->udp_remaining > avail) {
+            w5500_unlock(h);
+            return W5500_ERR_STATE;
+        }
+        avail = sock->udp_remaining;
     } else if (ip != NULL || port != NULL) {
         /* TCP peer is latched in Sn_DIPR/Sn_DPORT before data is consumed. */
         if (ip != NULL) {
@@ -535,8 +546,13 @@ w5500_result_t w5500_socket_recvfrom(w5500_socket_t sock,
     }
     rc = w5500_write16(h, W5500_Sn_RX_RD, W5500_BSB_SREG(sock->id),
                        (uint16_t)(rd + chunk));
-    if (rc == W5500_OK) {
-        rc = w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_RECV);
+    if (rc == W5500_OK && is_udp) {
+        /* Keep track of a partially consumed datagram; do not issue RECV
+           until the whole payload has been read. */
+        sock->udp_remaining = (uint16_t)(avail - chunk);
+        if (sock->udp_remaining == 0u) {
+            rc = w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_RECV);
+        }
     }
     if (rc == W5500_OK) {
         *recvd = chunk;
