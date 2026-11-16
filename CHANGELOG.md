@@ -6,6 +6,10 @@ versioning: [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- MQTT 3.1.1 client (`w5500_mqtt.h`): QoS 0 publish/subscribe over one TCP
+  socket, caller-owned storage, tick-driven poll, keepalive PINGREQ and
+  auto-reconnect on link loss; codec and state-machine fuzzing
+  (`fuzz-mqtt`, `fuzz-mqtt-state`).
 - Basic HTTP examples: shared codec (`examples/http/`), STM32 HTTP client
   (DHCP -> DNS -> GET -> parsed status/headers/body), STM32 HTTP server
   (port 80, 200/404), host demo in CI, `tests/test_http.c`.

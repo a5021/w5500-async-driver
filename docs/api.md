@@ -209,3 +209,21 @@ anything else gets exception 01.
 The callback receives `OK` with the register array for reads, `OK` with NULL
 for writes, `ERR_STATE` for a Modbus exception and `ERR_TIMEOUT` when no
 answer arrives.
+
+## MQTT (`include/w5500_mqtt.h`)
+
+| Function | Purpose |
+|----------|---------|
+| `w5500_mqtt_size()` | Storage bytes for one client |
+| `w5500_mqtt_init(&c, mem, size, chip, broker_ip, port, client_id, cb, user)` | Initialize (client id < 48 bytes) |
+| `w5500_mqtt_connect(c, now_ms, keepalive_s, clean_session, user, pass)` | Open TCP and queue CONNECT |
+| `w5500_mqtt_publish(c, now_ms, topic, payload, len, retain)` | Queue QoS 0 PUBLISH |
+| `w5500_mqtt_subscribe(c, now_ms, topic, qos)` | Queue SUBSCRIBE (QoS 0/1) |
+| `w5500_mqtt_poll(c, now_ms)` | Send, receive, keepalive, timeout |
+| `w5500_mqtt_stop(c)` | Close without a callback |
+
+The callback is `void cb(w5500_mqtt_t *c, w5500_mqtt_event_t ev,
+const uint8_t *topic, uint16_t topic_len, const uint8_t *payload,
+uint16_t payload_len, void *user)`. Topic and payload are non-NULL only for
+`W5500_MQTT_EVENT_PUBLISH` and are valid for the call only. Other events are
+`CONNECTED`, `SUBACK`, `DISCONNECTED` and `ERROR`.

@@ -124,3 +124,31 @@ own schedule.
   reply triggers one resend at 2 s; no reply by 4 s reports `ERR_TIMEOUT`.
 - A Modbus exception, a mismatched transaction id or a malformed reply
   reports `W5500_ERR_STATE`. The socket is closed after every request.
+
+## MQTT 3.1.1 client
+
+`w5500_mqtt.h` is a minimal publisher/subscriber over one TCP socket. It is
+tick driven, keeps all state in caller-owned memory and uses no heap.
+
+- Allocate `w5500_mqtt_size()` bytes (static or long-lived) and call
+  `w5500_mqtt_init()` with the chip handle, broker IP/port, client id and a
+  callback. The client id must be shorter than 48 bytes.
+- `w5500_mqtt_connect()` opens the socket and queues CONNECT (clean session
+  flag, keepalive in seconds, optional user/password). Call it again only
+  after a stop or a disconnect event; otherwise it returns `ERR_BUSY`.
+- `w5500_mqtt_publish()` (QoS 0, optional retain) and
+  `w5500_mqtt_subscribe()` (one topic filter, QoS 0/1) queue one packet at a
+  time. `ERR_BUSY` means the previous packet has not been sent yet.
+- Call `w5500_mqtt_poll()` alongside `w5500_poll()` on every tick. It sends
+  queued packets, drains and parses inbound frames, emits callbacks and
+  sends PINGREQ after half the keepalive interval without broker traffic.
+- The callback receives CONNECTED, PUBLISH (topic and payload point into the
+  client's RX buffer and stay valid only for the call), SUBACK,
+  DISCONNECTED and ERROR. Copy any data the application needs to keep.
+- A refused CONNACK, a connect timeout (5 s) or a link error closes the
+  socket and emits DISCONNECTED/ERROR. `w5500_mqtt_stop()` closes without a
+  callback; after it, `poll()` returns `ERR_STATE` until reconnecting.
+
+Limitations: QoS 1/2 and PUBACK handling, multiple pending subscriptions,
+TLS, websockets and retained publishing on the client side are not
+implemented. Packets are capped at 512 bytes.

@@ -1,6 +1,6 @@
 # Fuzzing the W5500 driver
 
-Thirteen libFuzzer harnesses run against the chip emulator
+Sixteen libFuzzer harnesses run against the chip emulator
 (`tests/mock_w5500.c`) with ASan/UBSan. Every property is checked with
 `abort()`, so libFuzzer stops and stores the failing input as a normal crash.
 
@@ -20,7 +20,10 @@ Thirteen libFuzzer harnesses run against the chip emulator
 | `fuzz-dhcp-state` | a live DHCP client: injections, clock steps, stop/start | BOUND/RENEWED implies the lease is applied to the chip, FAILED implies a closed socket, poll after stop returns `ERR_STATE`, lock balance |
 | `fuzz-dns-state` | a live DNS resolver: replies, clock steps, re-queries | exactly one callback per query, idle state inside the callback, callbacks never outnumber starts |
 | `fuzz-sntp` | SNTP decoder (`w5500_sntp_parse_response`) on arbitrary bytes | no OOB, server mode only, zero timestamp rejected, output untouched on failure, deterministic |
+| `fuzz-sntp-state` | a live SNTP client: replies, clock steps, stop/re-request | documented statuses only, poll after stop returns `ERR_STATE`, callbacks never outnumber starts, lock balance |
 | `fuzz-modbus` | Modbus TCP codecs: request (`w5500_mb_parse_adu`) and response (`w5500_mb_parse_response`) | no OOB, MBAP length consistency, count/byte-count rules for FC3/4/16, txid must match, deterministic |
+| `fuzz-mqtt` | MQTT 3.1.1 codec: remaining-length decoder, parser and builders | no OOB, header length 2..5, `consumed` inside the input, topic/payload alias the input, deterministic, builders reject short buffers and round-trip |
+| `fuzz-mqtt-state` | a live MQTT client: broker packets, clock steps, publish/subscribe, stop/reconnect | documented statuses only, callbacks carry topic/payload only for PUBLISH, lock balance |
 
 Shared fixtures: `tests/fuzz/fuzz_common.h` (emulator reset per input, a
 fixed 4 ms timeout - the timeout itself is **not** fuzzed so an input cannot
@@ -33,7 +36,7 @@ Driver internals are visible to the harnesses through
 ## Running
 
 ```sh
-make fuzz-all                    # all 13 targets, libFuzzer + ASan/UBSan, 120 s
+make fuzz-all                    # all 16 targets, libFuzzer + ASan/UBSan, 120 s
 make fuzz-reg-access             # one target
 FUZZ_MODE=asan make fuzz-all     # standalone runner + ASan/UBSan (no libFuzzer)
 FUZZ_TIME=60 make fuzz-all       # seconds per target

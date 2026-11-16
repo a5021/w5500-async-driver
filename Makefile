@@ -15,9 +15,10 @@ CPPFLAGS = -Iinclude -Isrc
 BUILD    := build
 CORE_BASE := src/w5500.c src/w5500_sockets.c
 PROTO_SRC := src/w5500_dhcp.c src/w5500_dns.c src/w5500_sntp.c \
-             src/w5500_modbus.c
+             src/w5500_modbus.c src/w5500_mqtt.c
 PROTO_OBJ := $(BUILD)/w5500_dhcp.o $(BUILD)/w5500_dns.o \
-             $(BUILD)/w5500_sntp.o $(BUILD)/w5500_modbus.o
+             $(BUILD)/w5500_sntp.o $(BUILD)/w5500_modbus.o \
+             $(BUILD)/w5500_mqtt.o
 # W5500_MINIMAL=1 builds only the chip core + socket layer (no protocols).
 ifeq ($(W5500_MINIMAL),1)
 CORE_SRC := $(CORE_BASE)
@@ -59,6 +60,10 @@ $(BUILD)/w5500_modbus.o: src/w5500_modbus.c src/w5500_modbus_internal.h \
                          include/w5500_modbus.h include/w5500_sockets.h | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
+$(BUILD)/w5500_mqtt.o: src/w5500_mqtt.c src/w5500_mqtt_internal.h \
+                       include/w5500_mqtt.h include/w5500_sockets.h | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
 $(BUILD)/libw5500.a: $(CORE_OBJ)
 	ar rcs $@ $(CORE_OBJ)
 
@@ -79,11 +84,16 @@ $(BUILD)/test_modbus.exe: $(CORE_SRC) tests/test_modbus.c tests/mock_w5500.c | $
 $(BUILD)/test_http.exe: examples/http/http.c tests/test_http.c | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) examples/http/http.c tests/test_http.c -o $@
 
-test: $(BUILD)/test_w5500.exe $(BUILD)/test_protocols.exe $(BUILD)/test_modbus.exe $(BUILD)/test_http.exe
+$(BUILD)/test_mqtt.exe: $(CORE_SRC) tests/test_mqtt.c tests/mock_w5500.c | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests $(CORE_SRC) tests/test_mqtt.c \
+	    tests/mock_w5500.c -o $@
+
+test: $(BUILD)/test_w5500.exe $(BUILD)/test_protocols.exe $(BUILD)/test_modbus.exe $(BUILD)/test_http.exe $(BUILD)/test_mqtt.exe
 	./$(BUILD)/test_w5500.exe
 	./$(BUILD)/test_protocols.exe
 	./$(BUILD)/test_modbus.exe
 	./$(BUILD)/test_http.exe
+	./$(BUILD)/test_mqtt.exe
 
 # Firmware examples are syntax-checked only: the STM32 port needs no vendor
 # headers, so the same sources compile on the host. The emulator demos are
@@ -168,7 +178,8 @@ endef
 
 .PHONY: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
         fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns \
-        fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-sntp-state fuzz-modbus fuzz-all
+        fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-sntp-state fuzz-modbus \
+        fuzz-mqtt fuzz-mqtt-state fuzz-all
 
 $(FUZZ_OUT):
 	mkdir -p $@
@@ -242,7 +253,16 @@ fuzz-modbus: | $(FUZZ_OUT)
 	$(FUZZ_CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_modbus.c $(FUZZ_SRC) \
 	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_modbus.exe
 	$(call run_fuzz,fuzz_modbus)
+fuzz-mqtt: | $(FUZZ_OUT)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_mqtt.c $(FUZZ_SRC) \
+	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_mqtt.exe
+	$(call run_fuzz,fuzz_mqtt)
+fuzz-mqtt-state: | $(FUZZ_OUT)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_mqtt_state.c $(FUZZ_SRC) \
+	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_mqtt_state.exe
+	$(call run_fuzz,fuzz_mqtt_state)
 
 fuzz-all: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
           fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns \
-          fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-sntp-state fuzz-modbus
+          fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-sntp-state fuzz-modbus \
+          fuzz-mqtt fuzz-mqtt-state

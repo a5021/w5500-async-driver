@@ -48,6 +48,9 @@ network controller. One repository for every development stage (see
   `w5500_set_socket_buffers_ex()`.
 - **Modbus TCP** (`w5500_modbus.h`): server (FC 3/4/6/16, up to 4 clients,
   register map through callbacks) and a polling client; the codec is fuzzed.
+- **MQTT 3.1.1 client** (`w5500_mqtt.h`): QoS 0 publish/subscribe over one
+  TCP socket, caller-owned storage, tick driven, keepalive PINGREQ, callback
+  delivery of inbound PUBLISH; codec and state machine are fuzzed.
 
 ## Repository layout
 
@@ -58,7 +61,8 @@ network controller. One repository for every development stage (see
 │   ├── w5500_dhcp.h      # DHCP client (separate layer)
 │   ├── w5500_dns.h       # DNS resolver (separate layer)
 │   ├── w5500_sntp.h      # SNTP client (separate layer)
-│   └── w5500_modbus.h    # Modbus TCP: server and client
+│   ├── w5500_modbus.h    # Modbus TCP: server and client
+│   └── w5500_mqtt.h      # MQTT 3.1.1 client (separate layer)
 ├── src/                  # Core implementation (plain C99)
 │   ├── w5500.c
 │   ├── w5500_sockets.c
@@ -66,6 +70,7 @@ network controller. One repository for every development stage (see
 │   ├── w5500_dns.c
 │   ├── w5500_sntp.c
 │   ├── w5500_modbus.c
+│   ├── w5500_mqtt.c
 │   ├── w5500_internal.h  # Internal context (hidden from users)
 │   └── w5500_registers.h # W5500 register map
 ├── ports/
@@ -299,8 +304,8 @@ chunked encoding, keep-alive or POST.
 - [docs/architecture.md](docs/architecture.md) - layers, execution model,
   locking, polling and timeout semantics, design invariants.
 - [docs/api.md](docs/api.md) - API reference by module.
-- [docs/protocols.md](docs/protocols.md) - DHCP, DNS, SNTP and Modbus TCP:
-  lifecycle, timing, storage and integration recipes.
+- [docs/protocols.md](docs/protocols.md) - DHCP, DNS, SNTP, Modbus TCP and
+  MQTT: lifecycle, timing, storage and integration recipes.
 - [docs/fuzzing.md](docs/fuzzing.md) - harnesses, corpus, run modes, CI.
 - [docs/README.md](docs/README.md) - stage tracker and document index.
 - [examples/README.md](examples/README.md) - what each example demonstrates.

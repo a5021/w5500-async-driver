@@ -23,7 +23,7 @@ its tests are in `src/`, `include/` and `tests/`.
 - [architecture.md](architecture.md) - three-layer design, execution model,
   locking, polling, timeouts, design invariants.
 - [api.md](api.md) - API reference grouped by module.
-- [protocols.md](protocols.md) - DHCP, DNS, SNTP and Modbus TCP usage:
+- [protocols.md](protocols.md) - DHCP, DNS, SNTP, Modbus TCP and MQTT usage:
   lifecycle, timing, storage and integration recipes.
 - [fuzzing.md](fuzzing.md) - harnesses, corpus and dictionary, run modes,
   CI and the nightly campaign.
