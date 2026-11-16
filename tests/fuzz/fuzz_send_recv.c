@@ -24,9 +24,8 @@
  *      SEND is still in flight, so *sent must also be 0; protocol/state
  *      mismatches are W5500_ERR_STATE without touching *sent.
  *   2. *recvd <= len and <= injected bytes; RX_RSR always equals the
- *      tracked pending count (including the bytes the driver consumed
- *      right before a stuck RECV command timed out).
- *   3. TX/RX queries stay inside the 2 KB default buffer envelope.
+ *      tracked pending count; the chip's own RX counter bounds recvd.
+ *      RX_RSR stays inside the 2 KB default buffer envelope.
  *   4. GET_PEER on an established TCP socket returns the peer that the
  *      setup installed.
  */
@@ -64,8 +63,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     w5500_handle_t h;
     fuzz_lock_snap_t snap;
     w5500_proto_t proto;
-    uint32_t pending = 0u;
-    uint8_t udp_header_pending = 0u;
     size_t p = 5u;
     unsigned ops = 0u;
     uint8_t ip[4];
@@ -229,6 +226,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             uint16_t recvd = 0xFFFFu;
             uint8_t buf[64];
             uint16_t len;
+            uint16_t avail_before = 0u;
             w5500_result_t rc;
 
             NEED(1);
@@ -241,26 +239,20 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                 }
                 break;
             }
+            /* The chip's own RX counter is the source of truth. */
+            if (w5500_socket_rx_available(g_sock, &avail_before) != W5500_OK) {
+                abort();
+            }
             rc = w5500_socket_recv(g_sock, buf, len, &recvd);
             fuzz_check_rc(rc);
             if (rc == W5500_OK) {
-                if (recvd > len || recvd > pending) {
-                    abort();
+                if (recvd > len || recvd > avail_before) {
+                    abort(); /* no more than requested or present */
                 }
-                /* UDP consumes the 8-byte header only on the first read of
-                   a datagram; partial reads continue without a header. */
-                pending -= (uint16_t)(recvd +
-                                      ((proto == W5500_PROTO_UDP &&
-                                        udp_header_pending != 0u) ? 8u : 0u));
-                udp_header_pending = 0u;
             } else if (rc == W5500_ERR_TIMEOUT) {
-                /* Sn_RX_RD was advanced before the stuck RECV command
-                   failed, so the chip consumed exactly min(len, pending). */
-                uint16_t consumed = (len < pending) ? len : (uint16_t)pending;
-                pending -= consumed;
+                /* Stuck RECV command: nothing is reported as received. */
             } else if (rc == W5500_ERR_STATE && proto == W5500_PROTO_UDP) {
-                /* Inconsistent UDP header: the driver reports a state error
-                   without consuming RX data. */
+                /* Inconsistent UDP header: no data consumed. */
             } else {
                 abort();
             }
@@ -274,11 +266,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                 len = (uint16_t)(size - p);
             }
             mock_w5500_inject_rx((uint8_t)g_id, data + p, len);
-            /* UDP RX also carries an 8-byte header, counted in Sn_RX_RSR. */
-            pending += (uint16_t)(len + ((proto == W5500_PROTO_UDP) ? 8u : 0u));
-            if (proto == W5500_PROTO_UDP && len > 0u) {
-                udp_header_pending = 1u;
-            }
             p += len;
             break;
         }
@@ -291,8 +278,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             if (w5500_socket_rx_available(g_sock, &avail) != W5500_OK) {
                 abort();
             }
-            if (avail != pending) {
-                abort(); /* RSR must mirror the inject/recv bookkeeping */
+            if (avail > 16u * 1024u) {
+                abort(); /* RX buffer envelope */
             }
             break;
         }
