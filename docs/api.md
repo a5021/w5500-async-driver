@@ -35,9 +35,9 @@ Chip identity: `W5500_HW_VERSION` (0x04), `W5500_SOCKET_COUNT` (4).
 | Function | Purpose | Notes |
 |----------|---------|-------|
 | `w5500_sw_reset(h)` | MR.RST and wait for self-clear | Bounded by the timeout |
-| `w5500_check(h)` | Probe VERSIONR == 0x04 and factory RTR == 0x07D0 | `ERR_CHIP` on mismatch |
+| `w5500_check(h)` | Probe VERSIONR, factory RTR and PHYCFGR | `ERR_CHIP` on mismatch |
 | `w5500_get_hw_version(h, &ver)` | Raw VERSIONR byte | |
-| `w5500_set_timeout(h, ms)` | Chip-wait timeout | 0 rejected; default 1000 ms |
+| `w5500_set_timeout(h, ms)` | Chip-wait timeout | 0 or > 0xFFFFF rejected; default 1000 ms |
 | `w5500_get_link_status(h, &up)` | PHYCFGR LNK bit | |
 | `w5500_get_link_info(h, &info)` | LNK/SPD/DPX decoded | |
 | `w5500_set_link_cb(h, cb, user)` | Link-change callback | Fired from poll; NULL disables |

@@ -13,10 +13,19 @@ CFLAGS  ?= -Wall -Wextra -std=c99 -Werror -g
 CPPFLAGS = -Iinclude -Isrc
 
 BUILD    := build
-CORE_SRC := src/w5500.c src/w5500_sockets.c src/w5500_dhcp.c src/w5500_dns.c \
-            src/w5500_sntp.c src/w5500_modbus.c
-CORE_OBJ := $(BUILD)/w5500.o $(BUILD)/w5500_sockets.o $(BUILD)/w5500_dhcp.o \
-            $(BUILD)/w5500_dns.o $(BUILD)/w5500_sntp.o $(BUILD)/w5500_modbus.o
+CORE_BASE := src/w5500.c src/w5500_sockets.c
+PROTO_SRC := src/w5500_dhcp.c src/w5500_dns.c src/w5500_sntp.c \
+             src/w5500_modbus.c
+PROTO_OBJ := $(BUILD)/w5500_dhcp.o $(BUILD)/w5500_dns.o \
+             $(BUILD)/w5500_sntp.o $(BUILD)/w5500_modbus.o
+# W5500_MINIMAL=1 builds only the chip core + socket layer (no protocols).
+ifeq ($(W5500_MINIMAL),1)
+CORE_SRC := $(CORE_BASE)
+CORE_OBJ := $(BUILD)/w5500.o $(BUILD)/w5500_sockets.o
+else
+CORE_SRC := $(CORE_BASE) $(PROTO_SRC)
+CORE_OBJ := $(BUILD)/w5500.o $(BUILD)/w5500_sockets.o $(PROTO_OBJ)
+endif
 
 .PHONY: all test lib examples clean
 
@@ -146,7 +155,7 @@ endef
 
 .PHONY: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
         fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns \
-        fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-modbus fuzz-all
+        fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-sntp-state fuzz-modbus fuzz-all
 
 $(FUZZ_OUT):
 	mkdir -p $@
@@ -211,6 +220,11 @@ fuzz-sntp: | $(FUZZ_OUT)
 	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_sntp.exe
 	$(call run_fuzz,fuzz_sntp)
 
+fuzz-sntp-state: | $(FUZZ_OUT)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_sntp_state.c $(FUZZ_SRC) \
+	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_sntp_state.exe
+	$(call run_fuzz,fuzz_sntp_state)
+
 fuzz-modbus: | $(FUZZ_OUT)
 	$(FUZZ_CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_modbus.c $(FUZZ_SRC) \
 	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_modbus.exe
@@ -218,4 +232,4 @@ fuzz-modbus: | $(FUZZ_OUT)
 
 fuzz-all: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
           fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns \
-          fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-modbus
+          fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-sntp-state fuzz-modbus

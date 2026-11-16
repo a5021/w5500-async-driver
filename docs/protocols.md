@@ -12,6 +12,11 @@ They follow the same contract:
   (or under the same mutex).
 - **Socket budget**: each instance consumes hardware sockets from the pool of
   four (table below). Plan the budget before opening application sockets.
+  A DHCP client keeps its socket for the whole lease lifetime, and DNS/SNTP
+  resolvers keep theirs open between queries for reuse. If all four slots are
+  needed for applications, stop the protocol instances you do not need:
+  `w5500_dhcp_stop()`, `w5500_dns_stop()`, `w5500_sntp_stop()` release their
+  socket. A Modbus server with four listeners occupies the entire pool.
 
 | Module | Sockets used | Ports | Timebase |
 |--------|--------------|-------|----------|
