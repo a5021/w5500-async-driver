@@ -6,7 +6,7 @@
  * Input layout:
  *   [0]    flags: bit0 = proto (1 => UDP, else TCP), bit1 = burst path,
  *                 bit2 = cr_stuck (applied AFTER setup), bit3 = send_stall
- *                 (applied AFTER setup)
+ *                 (applied AFTER setup), bit4 = unstable FSR/RSR counter
  *   [1..4] setup peer IP for the TCP remote_connect
  *   [..]   opcode script (<= FUZZ_MAX_OPS, bounds checked):
  *            0 SEND     len, payload
@@ -101,6 +101,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     /* Knobs only after setup so the clean open/connect path is exercised. */
     g_mock.cr_stuck = (uint8_t)((data[0] >> 2) & 1u);
     g_mock.send_stall = (uint8_t)((data[0] >> 3) & 1u);
+    g_mock.unstable_counter = (uint8_t)((data[0] >> 4) & 1u);
     snap = fuzz_lock_snap();
 
     while (p < size && ops < FUZZ_MAX_OPS) {
@@ -240,8 +241,14 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                 break;
             }
             /* The chip's own RX counter is the source of truth. */
-            if (w5500_socket_rx_available(g_sock, &avail_before) != W5500_OK) {
-                abort();
+            {
+                w5500_result_t arc = w5500_socket_rx_available(g_sock,
+                                                               &avail_before);
+                if (arc != W5500_OK &&
+                    !(arc == W5500_ERR_TIMEOUT &&
+                      g_mock.unstable_counter != 0u)) {
+                    abort();
+                }
             }
             rc = w5500_socket_recv(g_sock, buf, len, &recvd);
             fuzz_check_rc(rc);
@@ -275,8 +282,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                 fuzz_check_rc(w5500_socket_rx_available(g_sock, &avail));
                 break;
             }
-            if (w5500_socket_rx_available(g_sock, &avail) != W5500_OK) {
-                abort();
+            {
+                w5500_result_t rc = w5500_socket_rx_available(g_sock, &avail);
+                fuzz_check_rc(rc);
+                if (rc == W5500_ERR_TIMEOUT && g_mock.unstable_counter == 0u) {
+                    abort(); /* timeout only expected with unstable counters */
+                }
             }
             if (avail > 16u * 1024u) {
                 abort(); /* RX buffer envelope */
@@ -285,7 +296,13 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         }
         case 5u: { /* TXFREE */
             uint16_t free_bytes = 0u;
-            fuzz_check_rc(w5500_socket_tx_free(g_sock, &free_bytes));
+            {
+                w5500_result_t rc = w5500_socket_tx_free(g_sock, &free_bytes);
+                fuzz_check_rc(rc);
+                if (rc == W5500_ERR_TIMEOUT && g_mock.unstable_counter == 0u) {
+                    abort();
+                }
+            }
             if (g_sock != NULL && free_bytes > 2048u) {
                 abort(); /* default 2 KB TX buffer envelope */
             }

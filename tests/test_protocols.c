@@ -249,6 +249,58 @@ static void test_dhcp_flow(void)
     CHECK_EQ(g_mock.lock_count, g_mock.unlock_count);
 }
 
+static void test_dhcp_renew_unicast_and_nak(void)
+{
+    static uint8_t mem[4096];
+    w5500_handle_t h = fixture_open();
+    w5500_dhcp_t *d = NULL;
+    uint8_t mac[6] = {0x02, 8, 9, 10, 11, 12};
+    static const uint8_t ip[4] = {10, 0, 0, 77};
+    static const uint8_t mask[4] = {255, 255, 255, 0};
+    static const uint8_t gw[4] = {10, 0, 0, 1};
+    static const uint8_t dns_srv[4] = {10, 0, 0, 2};
+    uint8_t reply[512];
+    uint8_t xid[4];
+    uint16_t len;
+    uint32_t now = 1000u;
+
+    g_dhcp_events = 0u;
+    CHECK_EQ(w5500_dhcp_init(&d, mem, sizeof(mem), h, mac, dhcp_cb, NULL),
+             W5500_OK);
+    CHECK_EQ(w5500_dhcp_start(d, 0u), W5500_OK);
+    memcpy(xid, g_mock.last_sent[0] + 4, 4u);
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+
+    /* DISCOVER -> OFFER -> REQUEST -> ACK. */
+    len = build_reply(reply, 2u, xid, ip, mask, gw, dns_srv, 120u, gw);
+    mock_w5500_inject_rx(0, reply, len);
+    CHECK_EQ(w5500_dhcp_poll(d, now), W5500_OK);
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    len = build_reply(reply, 5u, xid, ip, mask, gw, dns_srv, 120u, gw);
+    mock_w5500_inject_rx(0, reply, len);
+    CHECK_EQ(w5500_dhcp_poll(d, now), W5500_OK);
+    CHECK_EQ(g_dhcp_events, 1u);
+
+    /* At half the lease, RENEW goes unicast to the server (option 54). */
+    now = 61000u;
+    CHECK_EQ(w5500_dhcp_poll(d, now), W5500_OK);
+    CHECK_EQ(g_mock.sreg[0][W5500_Sn_DIPR], gw[0]);
+    CHECK_EQ(g_mock.sreg[0][W5500_Sn_DIPR + 3u], gw[3]);
+    CHECK_EQ(g_mock.last_sent[0][242], 3u); /* REQUEST */
+
+    /* NAK in RENEWING -> DISCOVER with a new transaction id. */
+    memcpy(xid, g_mock.last_sent[0] + 4, 4u);
+    len = build_reply(reply, 6u, xid, NULL, NULL, NULL, NULL, 0u, gw);
+    mock_w5500_inject_rx(0, reply, len);
+    CHECK_EQ(w5500_poll(h), W5500_OK); /* clear SEND_DONE from RENEW */
+    CHECK_EQ(w5500_dhcp_poll(d, now), W5500_OK);
+    CHECK_EQ(g_mock.last_sent[0][242], 1u); /* DISCOVER */
+    CHECK_EQ(g_dhcp_events, 1u);             /* no extra event */
+
+    w5500_dhcp_stop(d);
+    w5500_deinit(h);
+}
+
 static void test_dhcp_nak_and_timeout(void)
 {
     static uint8_t mem[4096];
@@ -508,6 +560,9 @@ static void test_sntp_parse(void)
     pkt[0] = 0x23u; /* mode 3: client reply, not a server answer */
     CHECK_EQ(w5500_sntp_parse_response(pkt, sizeof(pkt), &t), -1);
     build_sntp_reply(pkt, 1700000000u);
+    pkt[0] = 0xE4u; /* LI=3: clock unsynchronised */
+    CHECK_EQ(w5500_sntp_parse_response(pkt, sizeof(pkt), &t), -1);
+    build_sntp_reply(pkt, 1700000000u);
     pkt[1] = 0u; /* kiss-of-death */
     CHECK_EQ(w5500_sntp_parse_response(pkt, sizeof(pkt), &t), -1);
     build_sntp_reply(pkt, 1700000000u);
@@ -565,6 +620,7 @@ int main(void)
     test_dhcp_parse();
     test_dhcp_flow();
     test_dhcp_nak_and_timeout();
+    test_dhcp_renew_unicast_and_nak();
     test_dns_parse();
     test_dns_query_and_answer();
     test_dns_timeout();

@@ -193,6 +193,7 @@ static w5500_handle_t fixture_open(void)
 static uint16_t g_hold[64];
 static uint16_t g_inp[32];
 static unsigned g_writes;
+static uint8_t g_map_fail;  /* 1: return ERR_CHIP -> Modbus exception 04 */
 
 static w5500_result_t map_read(uint8_t unit, uint8_t fc, uint16_t addr,
                                uint16_t count, uint16_t *regs, void *user)
@@ -202,6 +203,9 @@ static w5500_result_t map_read(uint8_t unit, uint8_t fc, uint16_t addr,
     uint16_t i;
 
     (void)user;
+    if (g_map_fail != 0u) {
+        return W5500_ERR_CHIP;
+    }
     if (unit != 1u) {
         return W5500_ERR_PARAM;
     }
@@ -227,6 +231,9 @@ static w5500_result_t map_write(uint8_t unit, uint16_t addr, uint16_t count,
                                 const uint16_t *regs, void *user)
 {
     (void)user;
+    if (g_map_fail != 0u) {
+        return W5500_ERR_CHIP;
+    }
     if (unit != 1u) {
         return W5500_ERR_PARAM;
     }
@@ -404,6 +411,37 @@ static void test_server_read_write(void)
     CHECK_EQ(g_mock.lock_count, g_mock.unlock_count);
 }
 
+static void test_server_callback_exception(void)
+{
+    static uint8_t mem[8192];
+    w5500_handle_t h = fixture_open();
+    w5500_modbus_server_t *srv = NULL;
+    static const uint8_t peer[4] = {10, 0, 0, 9};
+    uint8_t req[12];
+    uint16_t n;
+
+    g_writes = 0u;
+    g_map_fail = 0u;
+    CHECK_EQ(w5500_modbus_server_init(&srv, mem, sizeof(mem), h, 502u, 1u,
+                                      map_read, map_write, NULL),
+             W5500_OK);
+    CHECK_EQ(w5500_modbus_server_start(srv), W5500_OK);
+    mock_w5500_remote_connect(0, peer, 40000u);
+    (void)w5500_poll(h);
+
+    /* Read callback failure -> exception 04 (server failure). */
+    n = mk_read(req, 0x9001u, 1u, W5500_MB_FC_READ_HOLDING, 0u, 1u);
+    mock_w5500_inject_rx(0, req, n);
+    g_map_fail = 1u;
+    server_pump(h, srv);
+    g_map_fail = 0u;
+    CHECK_EQ(g_mock.last_sent[0][7], 0x83);
+    CHECK_EQ(g_mock.last_sent[0][8], 4u);
+
+    w5500_modbus_server_stop(srv);
+    w5500_deinit(h);
+}
+
 /* ------------------------------------------------------------------ */
 /* Client                                                              */
 /* ------------------------------------------------------------------ */
@@ -579,6 +617,7 @@ int main(void)
     test_parse_rejects();
     test_builders();
     test_server_read_write();
+    test_server_callback_exception();
     test_client_read();
     test_client_write_and_exception();
     test_client_timeout();

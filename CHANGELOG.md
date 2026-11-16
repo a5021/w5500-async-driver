@@ -6,6 +6,10 @@ versioning: [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Stronger tests: unstable FSR/RSR counter (read16_stable timeout), UDP
+  header error paths (truncated/inconsistent), partial datagrams, two-step
+  DHCP renew (unicast + NAK), Modbus callback exception 04, SNTP LI=3.
+  `fuzz-send-recv` now fuzzes the unstable-counter knob.
 - SNTP client (`w5500_sntp.h`): mode-3 request, Unix time, 3 attempts 2 s
   apart, `fuzz-sntp` harness.
 - IGMPv2 for UDP multicast: `W5500_SOCK_F_IGMP_V2` flag (Sn_MR.MC, requires

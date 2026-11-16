@@ -209,11 +209,19 @@ static uint8_t mock_mem_read(uint8_t bsb, uint16_t addr)
             uint8_t off = (uint8_t)(addr & 0xFFu);
             if (off == W5500_Sn_TX_FSR || off == W5500_Sn_TX_FSR + 1u) {
                 uint16_t v = tx_free(id);
+                if (g_mock.unstable_counter != 0u && (off & 1u) != 0u) {
+                    v = (uint16_t)(v + g_mock.unstable_phase);
+                    g_mock.unstable_phase = (uint8_t)(g_mock.unstable_phase ^ 1u);
+                }
                 return ((off & 1u) != 0u) ? (uint8_t)(v & 0xFFu)
                                           : (uint8_t)(v >> 8);
             }
             if (off == W5500_Sn_RX_RSR || off == W5500_Sn_RX_RSR + 1u) {
                 uint16_t v = rx_used(id);
+                if (g_mock.unstable_counter != 0u && (off & 1u) != 0u) {
+                    v = (uint16_t)(v + g_mock.unstable_phase);
+                    g_mock.unstable_phase = (uint8_t)(g_mock.unstable_phase ^ 1u);
+                }
                 return ((off & 1u) != 0u) ? (uint8_t)(v & 0xFFu)
                                           : (uint8_t)(v >> 8);
             }

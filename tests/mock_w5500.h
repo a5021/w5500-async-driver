@@ -37,6 +37,8 @@ typedef struct {
     uint8_t  connect_ok; /* 1: CONNECT succeeds instantly (default) */
     uint8_t  send_stall; /* 1: SEND accepted but never completes */
     uint8_t  phycfgr;
+    uint8_t  unstable_counter; /* 1: FSR/RSR reads never agree (timeout model) */
+    uint8_t  unstable_phase;   /* internal: toggled per low-byte read */
 
     /* stats */
     uint32_t lock_count;

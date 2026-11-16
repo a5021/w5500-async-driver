@@ -929,6 +929,72 @@ static void test_timeout_discards_data(void)
 
 /* ------------------------------------------------------------------ */
 
+static void test_unstable_counter_timeout(void)
+{
+    w5500_handle_t h = fixture_open();
+    w5500_socket_t s = NULL;
+    uint16_t n = 0u;
+
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5000u, evt_cb, NULL, &s),
+             W5500_OK);
+    /* A counter that never returns two equal samples must produce ERR_TIMEOUT
+       instead of hanging in read16_stable(). */
+    g_mock.unstable_counter = 1u;
+    g_mock.unstable_phase = 0u;
+    CHECK_EQ(w5500_socket_rx_available(s, &n), W5500_ERR_TIMEOUT);
+    CHECK_EQ(w5500_socket_tx_free(s, &n), W5500_ERR_TIMEOUT);
+    g_mock.unstable_counter = 0u;
+    CHECK_EQ(w5500_socket_close(s), W5500_OK);
+    w5500_deinit(h);
+}
+
+static void test_udp_header_errors(void)
+{
+    w5500_handle_t h = fixture_open();
+    w5500_socket_t s = NULL;
+    uint8_t bad[8];
+    uint16_t n = 0u;
+
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_UDP, 6000u, evt_cb, NULL, &s),
+             W5500_OK);
+
+    /* A RECV flag with fewer than 8 RX bytes is a truncated header; the
+       driver reports ERR_STATE instead of reading past the buffer. */
+    {
+        uint16_t wr = (uint16_t)(((uint16_t)g_mock.sreg[0][W5500_Sn_RX_WR] << 8) |
+                                  g_mock.sreg[0][W5500_Sn_RX_WR + 1u]);
+        memcpy(&g_mock.rx_mem[0][wr & 0x7FFu], "\x01\x02\x03\x04", 4u);
+        g_mock.sreg[0][W5500_Sn_RX_WR + 1u] = (uint8_t)((wr + 4u) & 0xFFu);
+        g_mock.sreg[0][W5500_Sn_RX_WR] = (uint8_t)(((wr + 4u) >> 8) & 0xFFu);
+    }
+    g_mock.sreg[0][W5500_Sn_IR] |= W5500_Sn_IR_RECV;
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(w5500_socket_recv(s, bad, sizeof(bad), &n), W5500_ERR_STATE);
+
+    /* A full header whose length field exceeds the RX data: inconsistent.
+       Write the header straight into RX memory so the mock does not prepend
+       another one. */
+    {
+        uint16_t wr = (uint16_t)(((uint16_t)g_mock.sreg[0][W5500_Sn_RX_WR] << 8) |
+                                  g_mock.sreg[0][W5500_Sn_RX_WR + 1u]);
+        bad[6] = 0xFFu;
+        bad[7] = 0xFFu;
+        memcpy(&g_mock.rx_mem[0][wr & 0x7FFu], bad, 8u);
+        g_mock.sreg[0][W5500_Sn_RX_WR + 1u] =
+            (uint8_t)((wr + 8u) & 0xFFu);
+        g_mock.sreg[0][W5500_Sn_RX_WR] =
+            (uint8_t)(((wr + 8u) >> 8) & 0xFFu);
+    }
+    g_mock.sreg[0][W5500_Sn_IR] |= W5500_Sn_IR_RECV;
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(w5500_socket_recv(s, bad, sizeof(bad), &n), W5500_ERR_STATE);
+
+    CHECK_EQ(w5500_socket_close(s), W5500_OK);
+    w5500_deinit(h);
+}
+
+/* ------------------------------------------------------------------ */
+
 int main(void)
 {
     mock_w5500_reset();
@@ -953,6 +1019,8 @@ int main(void)
     test_udp_partial_read();
     test_half_close_keeps_data();
     test_timeout_discards_data();
+    test_unstable_counter_timeout();
+    test_udp_header_errors();
     test_send_done_recovery();
     test_poll_read_budget();
     test_open_timeout_stuck_cr();

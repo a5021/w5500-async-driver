@@ -58,6 +58,7 @@ set before a reset to model a chip condition that persists across resets.
 | `cr_stuck` | `g_mock.cr_stuck` | When writing `Sn_CR`, the value is stored but never self-clears and `mock_handle_cmd()` is not called. Models a bus hang where the chip never accepts the command. |
 | `connect_ok` | `g_mock.connect_ok` | `CONNECT` on a TCP socket in INIT state succeeds (`ESTABLISHED` + `CON` IR) when 1; fails (`CLOSED` + `TIMEOUT` IR) when 0. |
 | `send_stall` | `g_mock.send_stall` | `SEND` command is accepted but `mock_do_send()` is never called: TX data stays in the buffer and `SEND_OK` is never set. Use `mock_w5500_complete_send()` to finish it manually. |
+| `unstable_counter` | `g_mock.unstable_counter` | Every low byte of a computed `Sn_TX_FSR`/`Sn_RX_RSR` read alternates by 1, so two successive samples never match. Models a bus glitch that makes `w5500_read16_stable()` give up with `W5500_ERR_TIMEOUT` after 8 attempts. |
 | `phycfgr` | `g_mock.phycfgr` | Raw `PHYCFGR` byte; bit0 = link on, bit1 = 100 Mbps, bit2 = full duplex. |
 
 `mock_w5500_reset()` zeroes all memory and counters, then restores
