@@ -385,6 +385,30 @@ void mock_w5500_inject_rx(uint8_t sock, const uint8_t *data, uint16_t len)
     uint16_t sz = rx_size(sock);
     uint16_t i;
 
+    /* Real W5500 hardware prepends an 8-byte UDP header (src IP, src port,
+       datagram length) to every datagram in RX memory. Model it so the
+       driver's header handling is covered by tests and fuzzers. */
+    if (g_mock.sreg[sock][W5500_Sn_MR] == W5500_Sn_MR_UDP) {
+        uint8_t hdr[8];
+        uint16_t j;
+
+        hdr[0] = 10u;
+        hdr[1] = 0u;
+        hdr[2] = 0u;
+        hdr[3] = (uint8_t)(sock + 1u);
+        hdr[4] = (uint8_t)(5000u >> 8);
+        hdr[5] = (uint8_t)(5000u & 0xFFu);
+        hdr[6] = (uint8_t)(len >> 8);
+        hdr[7] = (uint8_t)(len & 0xFFu);
+        for (j = 0; j < 8u; j++) {
+            g_mock.rx_mem[sock][(uint16_t)(wr + j) & (uint16_t)(sz - 1u)] =
+                hdr[j];
+        }
+        wr = (uint16_t)(wr + 8u);
+        memcpy(&g_mock.sreg[sock][W5500_Sn_DIPR], hdr, 4u);
+        sreg16_set(sock, W5500_Sn_DPORT, 5000u);
+    }
+
     for (i = 0; i < len; i++) {
         g_mock.rx_mem[sock][(uint16_t)(wr + i) & (uint16_t)(sz - 1u)] =
             data[i];

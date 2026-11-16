@@ -101,10 +101,14 @@ events are consumed before a protocol tries to transmit again.
   `SEND_DONE` callback is the intended pattern.
 - **Error precedence**: `STATE` (wrong protocol/state) before `PARAM` (NULL,
   zero length) before `BUSY`.
-- **UDP datagrams**: the chip holds only payload in RX memory; the peer
-  address is latched in `Sn_DIPR`/`Sn_DPORT` before the data is consumed.
-  A zero-length datagram raises `DATA_RECEIVED` with `Sn_RX_RSR == 0`, so
-  `recv` returns 0 bytes - treat that as an empty datagram, not an error.
+- **UDP datagrams**: the W5500 prepends an 8-byte header to every datagram
+  in RX memory (source IP 4, source port 2, datagram length 2); it is included
+  in `Sn_RX_RSR`. `recvfrom()` reads and skips that header, uses its peer
+  address/port and limits the read to one datagram's payload. TCP instead
+  latches the peer in `Sn_DIPR`/`Sn_DPORT` before consuming data.
+  A zero-length UDP datagram raises `DATA_RECEIVED` with `Sn_RX_RSR == 8`
+  (header only), so `recv` returns 0 bytes - treat that as an empty datagram,
+  not an error.
 - **Buffer layout**: `Sn_TXBUF_SIZE`/`Sn_RXBUF_SIZE` split 16 KB per
   direction. Changing the layout invalidates every open socket.
 

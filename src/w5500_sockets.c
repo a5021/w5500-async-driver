@@ -437,6 +437,9 @@ w5500_result_t w5500_socket_recvfrom(w5500_socket_t sock,
     uint16_t avail = 0u;
     uint16_t rd = 0u;
     uint16_t chunk;
+    uint16_t payload = 0u;
+    uint8_t hdr[8];
+    int is_udp = (sock->proto == W5500_Sn_MR_UDP);
     w5500_result_t rc = w5500_sock_valid(sock);
 
     if (rc != W5500_OK) {
@@ -461,29 +464,69 @@ w5500_result_t w5500_socket_recvfrom(w5500_socket_t sock,
         return W5500_OK;
     }
 
-    /* Peer info must be latched before the data is consumed (datasheet). */
-    if (ip != NULL) {
-        rc = w5500_ll_read(h, W5500_Sn_DIPR, W5500_BSB_SREG(sock->id), ip, 4u);
-        if (rc != W5500_OK) {
-            w5500_unlock(h);
-            return rc;
-        }
-    }
-    if (port != NULL) {
-        rc = w5500_read16(h, W5500_Sn_DPORT, W5500_BSB_SREG(sock->id), port);
-        if (rc != W5500_OK) {
-            w5500_unlock(h);
-            return rc;
-        }
-    }
-
-    chunk = (len < avail) ? len : avail;
-
     rc = w5500_read16(h, W5500_Sn_RX_RD, W5500_BSB_SREG(sock->id), &rd);
     if (rc != W5500_OK) {
         w5500_unlock(h);
         return rc;
     }
+
+    /* UDP datagrams carry an 8-byte header in RX memory: source IP (4),
+       source port (2), datagram length (2). It is counted in Sn_RX_RSR and
+       must be consumed together with the payload. */
+    if (is_udp) {
+        if (avail < 8u) {
+            w5500_unlock(h);
+            return W5500_ERR_STATE;
+        }
+        rc = w5500_ll_read(h, rd, W5500_BSB_RXBUF(sock->id), hdr, 8u);
+        if (rc != W5500_OK) {
+            w5500_unlock(h);
+            return rc;
+        }
+        payload = (uint16_t)(((uint16_t)hdr[6] << 8) | hdr[7]);
+        if (payload > (uint16_t)(avail - 8u)) {
+            w5500_unlock(h);
+            return W5500_ERR_STATE;
+        }
+        if (ip != NULL) {
+            memcpy(ip, hdr, 4u);
+        }
+        if (port != NULL) {
+            *port = (uint16_t)(((uint16_t)hdr[4] << 8) | hdr[5]);
+        }
+        if (payload == 0u) {
+            /* Empty datagram: consume only the 8-byte header and finish. */
+            rc = w5500_write16(h, W5500_Sn_RX_RD, W5500_BSB_SREG(sock->id),
+                               (uint16_t)(rd + 8u));
+            if (rc == W5500_OK) {
+                rc = w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_RECV);
+            }
+            w5500_unlock(h);
+            return rc;
+        }
+        rd = (uint16_t)(rd + 8u); /* skip header in chip RX memory */
+        avail = payload;          /* only this datagram's payload is ours */
+    } else if (ip != NULL || port != NULL) {
+        /* TCP peer is latched in Sn_DIPR/Sn_DPORT before data is consumed. */
+        if (ip != NULL) {
+            rc = w5500_ll_read(h, W5500_Sn_DIPR, W5500_BSB_SREG(sock->id), ip,
+                               4u);
+            if (rc != W5500_OK) {
+                w5500_unlock(h);
+                return rc;
+            }
+        }
+        if (port != NULL) {
+            rc = w5500_read16(h, W5500_Sn_DPORT, W5500_BSB_SREG(sock->id),
+                              port);
+            if (rc != W5500_OK) {
+                w5500_unlock(h);
+                return rc;
+            }
+        }
+    }
+
+    chunk = (len < avail) ? len : avail;
     /* Zero-copy: chip RX memory is streamed straight into the user buffer. */
     rc = w5500_ll_read(h, rd, W5500_BSB_RXBUF(sock->id), data, chunk);
     if (rc != W5500_OK) {

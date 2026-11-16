@@ -677,13 +677,9 @@ static void test_udp_flow(void)
     CHECK_EQ(w5500_socket_open(h, W5500_PROTO_UDP, 5000u, evt_cb, NULL, &s),
              W5500_OK);
 
-    /* RX with peer addressing. */
+    /* RX with peer addressing. The emulator's 8-byte UDP header carries
+       the sender (10.0.0.1:5000), which the driver reads into ip/port. */
     mock_w5500_inject_rx(0, (const uint8_t *)"ping", 4u);
-    /* Overwrite DIPR/DPORT as the chip would latch them... the model keeps
-     * whatever was last written; set the peer explicitly. */
-    memcpy(&g_mock.sreg[0][W5500_Sn_DIPR], peer, 4u);
-    g_mock.sreg[0][W5500_Sn_DPORT] = 0x12u;
-    g_mock.sreg[0][W5500_Sn_DPORT + 1u] = 0x34u;
 
     CHECK_EQ(w5500_poll(h), W5500_OK);
     CHECK_EQ(g_evt_count, 1u);
@@ -693,8 +689,9 @@ static void test_udp_flow(void)
              W5500_OK);
     CHECK_EQ(n, 4u);
     CHECK(memcmp(buf, "ping", 4) == 0);
-    CHECK(memcmp(ip, peer, 4) == 0);
-    CHECK_EQ(port, 0x1234u);
+    CHECK_EQ(ip[0], 10u);
+    CHECK_EQ(ip[3], 1u);
+    CHECK_EQ(port, 5000u);
 
     /* TX to an explicit destination. */
     CHECK_EQ(w5500_socket_sendto(s, peer, 9999u, (const uint8_t *)"pong", 4u,
