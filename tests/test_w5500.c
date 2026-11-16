@@ -958,8 +958,8 @@ static void test_udp_header_errors(void)
     CHECK_EQ(w5500_socket_open(h, W5500_PROTO_UDP, 6000u, evt_cb, NULL, &s),
              W5500_OK);
 
-    /* A RECV flag with fewer than 8 RX bytes is a truncated header; the
-       driver reports ERR_STATE instead of reading past the buffer. */
+    /* A truncated header (4 bytes in RX) must be rejected. No IR poke:
+       the callback in evt_cb() would drain RX during poll(). */
     {
         uint16_t wr = (uint16_t)(((uint16_t)g_mock.sreg[0][W5500_Sn_RX_WR] << 8) |
                                   g_mock.sreg[0][W5500_Sn_RX_WR + 1u]);
@@ -967,26 +967,21 @@ static void test_udp_header_errors(void)
         g_mock.sreg[0][W5500_Sn_RX_WR + 1u] = (uint8_t)((wr + 4u) & 0xFFu);
         g_mock.sreg[0][W5500_Sn_RX_WR] = (uint8_t)(((wr + 4u) >> 8) & 0xFFu);
     }
-    g_mock.sreg[0][W5500_Sn_IR] |= W5500_Sn_IR_RECV;
-    CHECK_EQ(w5500_poll(h), W5500_OK);
     CHECK_EQ(w5500_socket_recv(s, bad, sizeof(bad), &n), W5500_ERR_STATE);
 
-    /* A full header whose length field exceeds the RX data: inconsistent.
-       Write the header straight into RX memory so the mock does not prepend
-       another one. */
+    /* A full header whose length field exceeds the RX data: inconsistent. */
     {
-        uint16_t wr = (uint16_t)(((uint16_t)g_mock.sreg[0][W5500_Sn_RX_WR] << 8) |
-                                  g_mock.sreg[0][W5500_Sn_RX_WR + 1u]);
+        uint16_t rd = (uint16_t)(((uint16_t)g_mock.sreg[0][W5500_Sn_RX_RD] << 8) |
+                                  g_mock.sreg[0][W5500_Sn_RX_RD + 1u]);
+        memset(bad, 0, sizeof(bad));
         bad[6] = 0xFFu;
         bad[7] = 0xFFu;
-        memcpy(&g_mock.rx_mem[0][wr & 0x7FFu], bad, 8u);
-        g_mock.sreg[0][W5500_Sn_RX_WR + 1u] =
-            (uint8_t)((wr + 8u) & 0xFFu);
-        g_mock.sreg[0][W5500_Sn_RX_WR] =
-            (uint8_t)(((wr + 8u) >> 8) & 0xFFu);
+        memcpy(&g_mock.rx_mem[0][rd & 0x7FFu], bad, 8u);
+        g_mock.sreg[0][W5500_Sn_RX_WR + 1u] = (uint8_t)((rd + 8u) & 0xFFu);
+        g_mock.sreg[0][W5500_Sn_RX_WR] = (uint8_t)(((rd + 8u) >> 8) & 0xFFu);
     }
-    g_mock.sreg[0][W5500_Sn_IR] |= W5500_Sn_IR_RECV;
-    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(w5500_socket_rx_available(s, &n), W5500_OK);
+    CHECK_EQ(n, 8u);
     CHECK_EQ(w5500_socket_recv(s, bad, sizeof(bad), &n), W5500_ERR_STATE);
 
     CHECK_EQ(w5500_socket_close(s), W5500_OK);
