@@ -86,24 +86,50 @@ modules:
 
 ```
 ├── include/              # Public API headers
-│   ├── w5500.h           # Chip and context management API
-│   └── w5500_sockets.h   # Event-driven socket API
-├── src/                  # Core library sources
-│   ├── w5500.c           # Core and register access implementation
-│   ├── w5500_registers.h # Internal W5500 register map
-│   └── w5500_sockets.c   # Socket management logic
-├── ports/                # Platform and OS ports
-│   ├── stm32/            # STM32 SPI/GPIO/DWT port (CMSIS)
-│   │   ├── w5500_port_stm32.c
-│   │   └── w5500_port_stm32.h
-│   └── freertos/         # Synchronization (mutex) implementation
-│       └── w5500_port_rtos.c
-└── examples/             # Usage examples
-    └── stm32f4_freertos/ # STM32 + FreeRTOS demo project
+│   ├── w5500.h           # Core: chip, network, timeouts, raw access
+│   ├── w5500_sockets.h   # Event-driven socket API
+│   ├── w5500_dhcp.h      # DHCP client (separate layer)
+│   ├── w5500_dns.h       # DNS resolver (separate layer)
+│   ├── w5500_sntp.h      # SNTP client (separate layer)
+│   └── w5500_modbus.h    # Modbus TCP: server and client
+├── src/                  # Core implementation (plain C99)
+│   ├── w5500.c
+│   ├── w5500_sockets.c
+│   ├── w5500_dhcp.c
+│   ├── w5500_dns.c
+│   ├── w5500_sntp.c
+│   ├── w5500_modbus.c
+│   ├── w5500_internal.h  # Internal context (hidden from users)
+│   └── w5500_registers.h # W5500 register map
+├── ports/
+│   ├── stm32/            # Bare-metal CMSIS port (SPI/GPIO/DWT)
+│   └── freertos/         # Mutex hooks for multi-tasking
+├── examples/
+│   ├── stm32f4_baremetal/
+│   ├── stm32f4_freertos/
+│   ├── stm32f4_dhcp_dns/
+│   ├── stm32f4_modbus_server/
+│   ├── stm32f4_bench/
+│   └── host_mock_demo/   # Runs in CI against the emulator
+├── tests/                # Unit tests + W5500 emulator + fuzz harnesses
+│   └── fuzz/             # 13 harnesses, corpus, dictionary
+├── docs/
+│   ├── README.md         # Stage tracker and document index
+│   ├── architecture.md   # Layers, execution model, locking, invariants
+│   ├── api.md            # API reference by module
+│   ├── protocols.md      # DHCP, DNS, SNTP, Modbus usage
+│   ├── fuzzing.md        # Harnesses, corpus, CI
+│   └── stages/
+│       └── stage1.md     # Stage 1 specification (this file)
+├── .github/workflows/
+│   ├── ci.yml            # host-tests (gcc+clang) + fuzz
+│   └── nightly.yml       # 300s fuzz campaign
+├── Makefile              # Host build: test, examples, fuzz-all
+├── LICENSE               # MIT
+├── CHANGELOG.md          # Changelog (0.5.0 + Unreleased)
+├── CONTRIBUTING.md       # Build, test, contribution workflow
+└── README.md             # Overview, quick start, examples, docs index
 ```
-
-Note: the implemented tree grew with later stages (extra protocol modules,
-more examples); see the repository root README for the current layout.
 
 ---
 

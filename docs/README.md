@@ -27,6 +27,9 @@ its tests are in `src/`, `include/` and `tests/`.
   lifecycle, timing, storage and integration recipes.
 - [fuzzing.md](fuzzing.md) - harnesses, corpus and dictionary, run modes,
   CI and the nightly campaign.
+- [tests/mock_w5500.md](../tests/mock_w5500.md) - the W5500 emulator used by
+  unit tests and fuzz harnesses: SPI state machine, register/buffer model,
+  socket command side effects, behavior knobs.
 
 Related documents in the repository root:
 [examples/README.md](../examples/README.md),
