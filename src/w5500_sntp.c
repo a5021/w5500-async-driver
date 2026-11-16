@@ -46,6 +46,9 @@ int w5500_sntp_parse_response(const uint8_t *pkt, uint16_t len,
         return -1;
     }
     mode = (uint8_t)(pkt[0] & 0x07u);
+    if ((pkt[0] & 0xC0u) == 0xC0u) {
+        return -1; /* LI=3: clock unsynchronised */
+    }
     if (mode != SNTP_MODE_SERVER) {
         return -1;
     }

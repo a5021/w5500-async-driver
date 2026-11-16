@@ -653,7 +653,7 @@ static w5500_result_t mb_client_begin(struct w5500_modbus_client *cli,
     cli->resent = 0u;
     cli->t_last = now_ms;
 
-    rc = w5500_socket_open_ex(cli->chip, W5500_PROTO_TCP, 0u,
+    rc = w5500_socket_open_ex(cli->chip, W5500_PROTO_TCP, MODBUS_LOCAL_PORT,
                               W5500_SOCK_F_NO_DELAY, mb_client_cb, cli, &sock);
     if (rc != W5500_OK) {
         return rc;
@@ -860,7 +860,11 @@ w5500_result_t w5500_modbus_client_poll(w5500_modbus_client_t *cli,
     if ((int32_t)(now_ms - cli->t_last) >= (int32_t)MB_CLIENT_TIMEOUT_MS) {
         if (cli->resent == 0u) {
             uint16_t sent = 0u;
-            (void)w5500_socket_send(cli->sock, cli->req, cli->req_len, &sent);
+            w5500_result_t rc = w5500_socket_send(cli->sock, cli->req,
+                                                  cli->req_len, &sent);
+            if (rc == W5500_ERR_BUSY) {
+                return W5500_OK; /* try again on the next tick */
+            }
             cli->resent = 1u;
             cli->t_last = now_ms;
         } else {

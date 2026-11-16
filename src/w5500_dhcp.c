@@ -254,14 +254,16 @@ static uint32_t dhcp_next_xid(struct w5500_dhcp *d)
     return d->xid_seed;
 }
 
-static w5500_result_t dhcp_transmit(struct w5500_dhcp *d, uint16_t len)
+static w5500_result_t dhcp_transmit(struct w5500_dhcp *d, uint16_t len,
+                                    const uint8_t dest[4])
 {
     static const uint8_t broadcast[4] = {255u, 255u, 255u, 255u};
     uint16_t sent = 0u;
     w5500_result_t rc;
 
-    rc = w5500_socket_sendto(d->sock, broadcast, DHCP_SERVER_PORT, d->tx, len,
-                             &sent);
+    rc = w5500_socket_sendto(d->sock,
+                             (dest != NULL) ? dest : broadcast,
+                             DHCP_SERVER_PORT, d->tx, len, &sent);
     if (rc == W5500_ERR_BUSY) {
         return W5500_OK; /* previous SEND pending; retransmit later */
     }
@@ -333,7 +335,7 @@ static void dhcp_handle_reply(struct w5500_dhcp *d, const uint8_t *pkt,
         memcpy(d->ip, m.ip, 4u);
         memcpy(d->server, m.server, 4u);
         out_len = dhcp_build(d, DHCP_REQUEST, d->ip, d->server);
-        (void)dhcp_transmit(d, out_len);
+        (void)dhcp_transmit(d, out_len, NULL);
         d->state = DHCP_STATE_REQUESTING;
         d->t_last = now;
         d->attempts = 1u;
@@ -360,7 +362,7 @@ static void dhcp_handle_reply(struct w5500_dhcp *d, const uint8_t *pkt,
         }
         d->xid_seed = dhcp_next_xid(d);
         out_len = dhcp_build(d, DHCP_DISCOVER, NULL, NULL);
-        (void)dhcp_transmit(d, out_len);
+        (void)dhcp_transmit(d, out_len, NULL);
         d->state = DHCP_STATE_SELECTING;
         d->t_last = now;
         d->attempts = 1u;
@@ -424,7 +426,12 @@ w5500_result_t w5500_dhcp_poll(w5500_dhcp_t *dhcp, uint32_t now_ms)
             } else {
                 len = dhcp_build(dhcp, DHCP_DISCOVER, NULL, NULL);
             }
-            (void)dhcp_transmit(dhcp, len);
+            if (dhcp->state == DHCP_STATE_RENEWING) {
+                /* RFC 2131: RENEWING is unicast to the server from option 54. */
+                (void)dhcp_transmit(dhcp, len, dhcp->server);
+            } else {
+                (void)dhcp_transmit(dhcp, len, NULL);
+            }
             dhcp->t_last = now_ms;
             dhcp->attempts++;
         }
@@ -432,7 +439,7 @@ w5500_result_t w5500_dhcp_poll(w5500_dhcp_t *dhcp, uint32_t now_ms)
         if (elapsed_since(now_ms, dhcp->t_renew) >= 0) {
             uint16_t len = dhcp_build(dhcp, DHCP_REQUEST, dhcp->ip,
                                       dhcp->server);
-            (void)dhcp_transmit(dhcp, len);
+            (void)dhcp_transmit(dhcp, len, dhcp->server);
             dhcp->state = DHCP_STATE_RENEWING;
             dhcp->t_last = now_ms;
             dhcp->attempts = 1u;
@@ -444,7 +451,7 @@ w5500_result_t w5500_dhcp_poll(w5500_dhcp_t *dhcp, uint32_t now_ms)
         uint16_t len;
         dhcp->xid_seed = dhcp_next_xid(dhcp);
         len = dhcp_build(dhcp, DHCP_DISCOVER, NULL, NULL);
-        (void)dhcp_transmit(dhcp, len);
+        (void)dhcp_transmit(dhcp, len, NULL);
         dhcp->state = DHCP_STATE_SELECTING;
         dhcp->t_last = now_ms;
         dhcp->attempts = 1u;
@@ -515,7 +522,7 @@ w5500_result_t w5500_dhcp_start(w5500_dhcp_t *dhcp, uint32_t now_ms)
     dhcp->attempts = 1u;
 
     len = dhcp_build(dhcp, DHCP_DISCOVER, NULL, NULL);
-    rc = dhcp_transmit(dhcp, len);
+    rc = dhcp_transmit(dhcp, len, NULL);
     if (rc != W5500_OK) {
         w5500_dhcp_stop(dhcp);
     }

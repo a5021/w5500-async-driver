@@ -210,7 +210,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             prev = h_active->timeout_ms;
             rc = w5500_set_timeout(h_active, v);
             fuzz_check_rc(rc);
-            if (v == 0u) {
+            if (v == 0u || v > W5500_MAX_TIMEOUT_MS) {
                 if (rc != W5500_ERR_PARAM || h_active->timeout_ms != prev) {
                     abort();
                 }

@@ -376,6 +376,7 @@ w5500_result_t w5500_check(w5500_handle_t handle)
 {
     uint8_t ver = 0u;
     uint16_t rtr = 0u;
+    uint8_t phy = 0u;
     w5500_result_t rc = w5500_get_hw_version(handle, &ver);
 
     if (rc != W5500_OK) {
@@ -384,14 +385,21 @@ w5500_result_t w5500_check(w5500_handle_t handle)
     if (ver != W5500_HW_VERSION) {
         return W5500_ERR_CHIP;
     }
-    /* Second, independent identity probe: RTR always boots at 0x07D0. */
+    /* Second, independent identity probe: RTR always boots at 0x07D0.
+       Third probe: PHYCFGR is a real register (not 0xFF from a floating bus). */
     w5500_lock(handle);
     rc = w5500_read16(handle, W5500_REG_RTR, W5500_BSB_COMMON, &rtr);
+    if (rc == W5500_OK) {
+        rc = w5500_read8(handle, W5500_REG_PHYCFGR, W5500_BSB_COMMON, &phy);
+    }
     w5500_unlock(handle);
     if (rc != W5500_OK) {
         return rc;
     }
-    return (rtr == W5500_RTR_DEFAULT) ? W5500_OK : W5500_ERR_CHIP;
+    if (rtr != W5500_RTR_DEFAULT || phy == 0xFFu) {
+        return W5500_ERR_CHIP;
+    }
+    return W5500_OK;
 }
 
 w5500_result_t w5500_set_ping_block(w5500_handle_t handle, bool enable)
@@ -454,7 +462,8 @@ w5500_result_t w5500_get_retransmit(w5500_handle_t handle,
 
 w5500_result_t w5500_set_timeout(w5500_handle_t handle, uint32_t timeout_ms)
 {
-    if (handle == NULL || timeout_ms == 0u) {
+    if (handle == NULL || timeout_ms == 0u ||
+        timeout_ms > W5500_MAX_TIMEOUT_MS) {
         return W5500_ERR_PARAM;
     }
     w5500_lock(handle);

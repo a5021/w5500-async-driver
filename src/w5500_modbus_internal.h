@@ -14,6 +14,7 @@
 
 /** Server listening sockets the library supports (one per client). */
 #define MODBUS_MAX_CLIENTS 4u
+#define MODBUS_LOCAL_PORT  0x3000u  /* ephemeral client source port */
 
 /* Modbus exception codes. */
 #define W5500_MB_EX_ILLEGAL_FUNCTION 1u

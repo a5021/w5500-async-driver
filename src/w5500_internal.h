@@ -15,6 +15,9 @@
 /** Default chip command completion timeout (ms). */
 #define W5500_DEFAULT_TIMEOUT_MS 1000u
 
+/** Largest timeout (ms) whose value in microseconds still fits uint32. */
+#define W5500_MAX_TIMEOUT_MS     0xFFFFFu
+
 /** Application-level socket slot state (SSR = socket software state). */
 typedef enum {
     W5500_SSR_FREE = 0,

@@ -29,8 +29,8 @@
  *      TX/RXBUF_SIZE registers equal kb, only those 8 bytes of sreg may
  *      change, and all driver socket slots are invalidated. On failure
  *      nothing moves at all.
- *   3. SET_TIMEOUT: 0 -> ERR_PARAM and the previous value is preserved,
- *      anything else -> OK and timeout_ms matches.
+ *   3. SET_TIMEOUT: 0 or a value above W5500_MAX_TIMEOUT_MS -> ERR_PARAM
+ *      (previous preserved); otherwise OK and timeout_ms matches.
  *   4. LINK: a raw PHYCFGR write is observed by get_link_status with
  *      exactly bit 0 semantics.
  *   5. CHECK reads VERSIONR == 4; SW_RESET clears the network registers
@@ -314,9 +314,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             prev = h->timeout_ms;
             rc = w5500_set_timeout(h, v);
             fuzz_check_rc(rc);
-            if (v == 0u) {
+            if (v == 0u || v > W5500_MAX_TIMEOUT_MS) {
                 if (rc != W5500_ERR_PARAM || h->timeout_ms != prev) {
-                    abort(); /* 0 is rejected and keeps the previous value */
+                    abort(); /* out-of-range is rejected, previous preserved */
                 }
             } else if (rc != W5500_OK || h->timeout_ms != v) {
                 abort();
