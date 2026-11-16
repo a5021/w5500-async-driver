@@ -246,12 +246,19 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                 if (recvd > len || recvd > pending) {
                     abort();
                 }
-                pending -= recvd;
+                /* UDP consumes the 8-byte header in addition to the payload
+                   reported in recvd. */
+                pending -= (uint16_t)(recvd +
+                                      ((proto == W5500_PROTO_UDP && recvd > 0u)
+                                           ? 8u : 0u));
             } else if (rc == W5500_ERR_TIMEOUT) {
                 /* Sn_RX_RD was advanced before the stuck RECV command
                    failed, so the chip consumed exactly min(len, pending). */
                 uint16_t consumed = (len < pending) ? len : (uint16_t)pending;
                 pending -= consumed;
+            } else if (rc == W5500_ERR_STATE && proto == W5500_PROTO_UDP) {
+                /* Inconsistent UDP header: the driver reports a state error
+                   without consuming RX data. */
             } else {
                 abort();
             }
@@ -265,7 +272,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                 len = (uint16_t)(size - p);
             }
             mock_w5500_inject_rx((uint8_t)g_id, data + p, len);
-            pending += len;
+            /* UDP RX also carries an 8-byte header, counted in Sn_RX_RSR. */
+            pending += (uint16_t)(len + ((proto == W5500_PROTO_UDP) ? 8u : 0u));
             p += len;
             break;
         }
