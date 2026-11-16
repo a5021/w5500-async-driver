@@ -92,6 +92,9 @@ static void test_codec(void)
         CHECK_EQ(w5500_mqtt_parse(trunc, sizeof(trunc), &pkt, &consumed), -1);
         static const uint8_t badlen[] = {0x30, 0x80, 0x80, 0x80, 0x80};
         CHECK_EQ(w5500_mqtt_parse(badlen, sizeof(badlen), &pkt, &consumed), -1);
+        static const uint8_t short_cont[] = {0x30, 0x80};
+        CHECK_EQ(w5500_mqtt_parse(short_cont, sizeof(short_cont), &pkt,
+                                  &consumed), -1);
         CHECK_EQ(w5500_mqtt_parse(NULL, 0u, &pkt, &consumed), -1);
     }
     /* SUBSCRIBE and PINGREQ. */

@@ -77,7 +77,7 @@ int w5500_mqtt_remaining_len(const uint8_t *buf, uint16_t len,
         return -1;
     }
     for (i = 0; i < 4u; i++) {
-        if ((uint32_t)i + 1u > (uint32_t)len) {
+        if ((uint32_t)i + 2u > (uint32_t)len) {
             return -1;
         }
         v += (uint32_t)(buf[i + 1u] & 0x7Fu) * mult;
