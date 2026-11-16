@@ -33,8 +33,8 @@
  *      (previous preserved); otherwise OK and timeout_ms matches.
  *   4. LINK: a raw PHYCFGR write is observed by get_link_status with
  *      exactly bit 0 semantics.
- *   5. CHECK reads VERSIONR == 4; SW_RESET clears the network registers
- *      back to post-reset defaults.
+ *   5. CHECK reads VERSIONR/RTR/PHYCFGR; ERR_CHIP only when PHYCFGR was
+ *      poked to 0xFF (a floating-bus pattern).
  *   6. Every NULL/zero-arity probe returns ERR_PARAM without touching
  *      the register image.
  *   7. ASYM_SETBUF: OK <=> all four sizes are chip-legal and their sum fits
@@ -357,7 +357,14 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             uint8_t ver = 0u;
             w5500_result_t rc = w5500_check(h);
             fuzz_check_rc(rc);
-            if (rc != W5500_OK) {
+            /* CHECK probes VERSIONR, RTR and PHYCFGR. A raw LINK poke may
+               have set PHYCFGR to 0xFF, which a real bus would read from a
+               floating line; the driver reports ERR_CHIP then. */
+            if (g_mock.common[W5500_REG_PHYCFGR & 0x3Fu] == 0xFFu) {
+                if (rc != W5500_ERR_CHIP) {
+                    abort();
+                }
+            } else if (rc != W5500_OK) {
                 abort(); /* mock VERSIONR is a healthy 0x04 */
             }
             rc = w5500_get_hw_version(h, &ver);
