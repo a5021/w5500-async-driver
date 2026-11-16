@@ -95,6 +95,10 @@ static void test_codec(void)
         static const uint8_t short_cont[] = {0x30, 0x80};
         CHECK_EQ(w5500_mqtt_parse(short_cont, sizeof(short_cont), &pkt,
                                   &consumed), -1);
+        /* remaining length 0xFFFF with a 5-byte header wraps 16-bit total. */
+        static const uint8_t wrap_len[] = {0x20, 0xFF, 0xFF, 0x03, 0x00};
+        CHECK_EQ(w5500_mqtt_parse(wrap_len, sizeof(wrap_len), &pkt,
+                                  &consumed), -1);
         CHECK_EQ(w5500_mqtt_parse(NULL, 0u, &pkt, &consumed), -1);
     }
     /* SUBSCRIBE and PINGREQ. */

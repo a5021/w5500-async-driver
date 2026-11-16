@@ -109,16 +109,18 @@ int w5500_mqtt_parse(const uint8_t *buf, uint16_t len,
 {
     uint16_t remain = 0u;
     uint8_t hdr = 0u;
+    uint32_t total32;
     uint16_t total;
     uint16_t off;
 
     if (w5500_mqtt_remaining_len(buf, len, &remain, &hdr) != 0) {
         return -1;
     }
-    total = (uint16_t)(hdr + remain);
-    if (total > len || out == NULL) {
+    total32 = (uint32_t)hdr + (uint32_t)remain;
+    if (total32 > (uint32_t)len || out == NULL) {
         return -1;
     }
+    total = (uint16_t)total32;
     memset(out, 0, sizeof(*out));
     out->type = (uint8_t)(buf[0] >> 4);
     out->flags = (uint8_t)(buf[0] & 0x0Fu);
@@ -142,10 +144,10 @@ int w5500_mqtt_parse(const uint8_t *buf, uint16_t len,
             return -1;
         }
         tlen = (uint16_t)(((uint16_t)buf[off] << 8) | buf[off + 1u]);
-        payload_off = (uint16_t)(off + 2u + tlen);
-        if ((uint32_t)payload_off > (uint32_t)total) {
+        if ((uint32_t)off + 2u + (uint32_t)tlen > (uint32_t)total) {
             return -1;
         }
+        payload_off = (uint16_t)((uint32_t)off + 2u + (uint32_t)tlen);
         out->topic = buf + off + 2u;
         out->topic_len = tlen;
         if (out->qos > 0u) {
