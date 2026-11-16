@@ -6,6 +6,9 @@ versioning: [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Basic HTTP examples: shared codec (`examples/http/`), STM32 HTTP client
+  (DHCP -> DNS -> GET -> parsed status/headers/body), STM32 HTTP server
+  (port 80, 200/404), host demo in CI, `tests/test_http.c`.
 - Stronger tests: unstable FSR/RSR counter (read16_stable timeout), UDP
   header error paths (truncated/inconsistent), partial datagrams, two-step
   DHCP renew (unicast + NAK), Modbus callback exception 04, SNTP LI=3.

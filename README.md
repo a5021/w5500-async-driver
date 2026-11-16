@@ -285,6 +285,15 @@ duplex (`full_duplex`).
 | `W5500_ERR_CHIP` | wrong chip on the bus | VERSIONR != 0x04 or RTR != 0x07D0 |
 | `W5500_ERR_BUSY` | resource busy | another `send` before `SEND_DONE` |
 
+## HTTP examples
+
+Basic HTTP client and server examples live under
+[examples/](../examples/README.md): a shared codec (`examples/http/`),
+an STM32 client (DHCP -> DNS -> GET -> parsed response), an STM32 server
+(port 80, 200/404), and a host demo executed by `make examples`.
+Only status, headers and `Content-Length` bodies are handled: no TLS,
+chunked encoding, keep-alive or POST.
+
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) - layers, execution model,
