@@ -49,6 +49,8 @@ versioning: [Semantic Versioning](https://semver.org/).
   coverage artifact.
 
 ### Fixed
+- SNTP replies whose transmit timestamp converts to Unix time 0 are now
+  rejected instead of completing the request with an epoch callback.
 - Data followed by a peer FIN is no longer lost: the driver keeps the socket
   alive, delivers `DATA_RECEIVED`, and reports `DISCONNECTED` only after the
   RX buffer is drained.

@@ -57,7 +57,7 @@ int w5500_sntp_parse_response(const uint8_t *pkt, uint16_t len,
     }
     ntp = ((uint32_t)pkt[40] << 24) | ((uint32_t)pkt[41] << 16) |
           ((uint32_t)pkt[42] << 8) | (uint32_t)pkt[43];
-    if (ntp == 0u || ntp < W5500_SNTP_UNIX_DELTA) {
+    if (ntp <= W5500_SNTP_UNIX_DELTA) {
         return -1; /* no usable transmit timestamp */
     }
     *unix_time = ntp - W5500_SNTP_UNIX_DELTA;

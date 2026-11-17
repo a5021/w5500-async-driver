@@ -568,6 +568,8 @@ static void test_sntp_parse(void)
     build_sntp_reply(pkt, 1700000000u);
     memset(pkt + 40, 0, 4);
     CHECK_EQ(w5500_sntp_parse_response(pkt, sizeof(pkt), &t), -1);
+    build_sntp_reply(pkt, 0u); /* Unix epoch is not a usable reply time */
+    CHECK_EQ(w5500_sntp_parse_response(pkt, sizeof(pkt), &t), -1);
     build_sntp_reply(pkt, 1700000000u);
     CHECK_EQ(w5500_sntp_parse_response(pkt, 47u, &t), -1);
     CHECK_EQ(w5500_sntp_parse_response(NULL, sizeof(pkt), &t), -1);
