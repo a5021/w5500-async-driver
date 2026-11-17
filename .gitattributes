@@ -1,4 +1,6 @@
 * text=auto eol=lf
+# Fuzz corpus seeds are binary: CRLF and high bytes are meaningful payload.
+*.bin binary
 *.c text eol=lf
 *.h text eol=lf
 *.md text eol=lf
