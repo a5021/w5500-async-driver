@@ -233,11 +233,25 @@ The core builds with any C99 compiler; tests run against a software W5500
 emulator (no hardware required):
 
 ```sh
-make test      # three unit-test binaries (-Wall -Wextra -std=c99 -Werror)
-make examples  # run the emulator demo, syntax-check the firmware examples
+make test      # seven unit-test binaries (-Wall -Wextra -std=c99 -Werror)
+make examples  # run the emulator demos, syntax-check the firmware examples
 make lib       # build/libw5500.a
-make fuzz-all  # 13 fuzz harnesses (Clang + libFuzzer + ASan/UBSan)
+make fuzz-all  # 17 fuzz harnesses (Clang + libFuzzer + ASan/UBSan)
 ```
+
+CMake is supported as an alternative to the Makefile:
+
+```sh
+cmake -S . -B build-cmake -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-cmake
+ctest --test-dir build-cmake --output-on-failure
+```
+
+`-DW5500_MINIMAL=ON` builds only the chip core and socket layer;
+`-DW5500_BUILD_TESTS=OFF` and `-DW5500_BUILD_HOST_DEMOS=OFF` skip the host
+targets for firmware integration. IRQ-driven designs use
+`w5500_irq_pending()` from the INTn ISR, then call `w5500_poll()` in the
+network task; see [docs/architecture.md](docs/architecture.md).
 
 Fuzzing details: [docs/fuzzing.md](docs/fuzzing.md).
 `ports/stm32` and `ports/freertos` are not part of the host build: they need

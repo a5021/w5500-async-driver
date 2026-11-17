@@ -6,6 +6,9 @@ versioning: [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- CMake build (`CMakeLists.txt`) with CTest registration for the seven unit
+  tests and two host demos, `W5500_MINIMAL` and host-target options, plus a
+  CMake job in CI.
 - Optional diagnostics counters (`w5500_stats_t`): caller-owned, attached with
   `w5500_set_stats()`; tracks SPI frames/bytes, timeouts, link changes,
   socket opens/closes and sent/received bytes and datagrams. Disabled by

@@ -4,17 +4,26 @@
 
 - A C99 compiler and GNU Make for the host build (`gcc` is the default,
   `clang` is required for fuzzing).
-- CMake is not used; the Makefile targets are enough.
+- CMake 3.10+ is optional; it builds the same library and registers the host
+  tests with CTest.
 - FreeRTOS and CMSIS headers are only needed when building the ports, not for
   the host tests.
 
 ## Commands
 
 ```sh
-make test       # three unit-test binaries against the chip emulator
-make examples   # syntax-check the firmware examples
+make test       # seven unit-test binaries against the chip emulator
+make examples   # run the host demos, syntax-check the firmware examples
 make lib        # build/libw5500.a
-make fuzz-all   # 13 libFuzzer harnesses (Clang)
+make fuzz-all   # 17 libFuzzer harnesses (Clang)
+```
+
+CMake equivalent:
+
+```sh
+cmake -S . -B build-cmake -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-cmake
+ctest --test-dir build-cmake --output-on-failure
 ```
 
 Fuzzing modes:
@@ -64,8 +73,9 @@ Fuzzing modes:
 ## CI
 
 `.github/workflows/ci.yml` runs `make test`, `make examples` (which executes
-the emulator demo) and the fuzz suite on every push/PR to `main`, for both gcc
-and clang; the gcc leg also produces a gcov coverage artifact.
+the emulator demos) and the fuzz suite on every push/PR to `main`, for both gcc
+and clang; the gcc leg also produces a gcov coverage artifact. A separate job
+configures, builds and runs the host targets through CMake/CTest.
 `.github/workflows/nightly.yml` runs a 300-second campaign per harness over the
 cached corpus. A red CI is a blocker; pull requests should reference the issue
 they fix.

@@ -59,6 +59,16 @@ jobs:
           path: "*.gcov"
           if-no-files-found: ignore
 
+  cmake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure, build and test with CMake
+        run: |
+          cmake -S . -B build-cmake -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-cmake --parallel 2
+          ctest --test-dir build-cmake --output-on-failure
+
   fuzz:
     runs-on: ubuntu-latest
     steps:
