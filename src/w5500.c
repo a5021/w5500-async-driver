@@ -50,6 +50,34 @@ static void w5500_spi_byte(w5500_handle_t h, uint8_t byte)
     (void)h->plat.spi_transfer_byte(byte);
 }
 
+static void stats_spi_done(w5500_handle_t h, uint16_t len)
+{
+    if (h->stats != NULL) {
+        h->stats->spi_transfers++;
+        h->stats->spi_bytes += len;
+    }
+}
+
+static void stats_spi_error(w5500_handle_t h)
+{
+    if (h->stats != NULL) {
+        h->stats->spi_errors++;
+    }
+}
+
+static void stats_timeout(w5500_handle_t h)
+{
+    if (h->stats != NULL) {
+        h->stats->timeouts++;
+    }
+}
+
+static w5500_result_t stats_timeout_ret(w5500_handle_t h)
+{
+    stats_timeout(h);
+    return W5500_ERR_TIMEOUT;
+}
+
 w5500_result_t w5500_ll_read(w5500_handle_t h, uint16_t addr, uint8_t bsb,
                              uint8_t *buf, uint16_t len)
 {
@@ -58,6 +86,7 @@ w5500_result_t w5500_ll_read(w5500_handle_t h, uint16_t addr, uint8_t bsb,
     }
     if (h->plat.spi_select == NULL || h->plat.spi_deselect == NULL ||
         h->plat.spi_transfer_byte == NULL) {
+        stats_spi_error(h);
         return W5500_ERR_SPI;
     }
 
@@ -75,6 +104,7 @@ w5500_result_t w5500_ll_read(w5500_handle_t h, uint16_t addr, uint8_t bsb,
         }
     }
     h->plat.spi_deselect();
+    stats_spi_done(h, len);
     return W5500_OK;
 }
 
@@ -86,6 +116,7 @@ w5500_result_t w5500_ll_write(w5500_handle_t h, uint16_t addr, uint8_t bsb,
     }
     if (h->plat.spi_select == NULL || h->plat.spi_deselect == NULL ||
         h->plat.spi_transfer_byte == NULL) {
+        stats_spi_error(h);
         return W5500_ERR_SPI;
     }
 
@@ -103,6 +134,7 @@ w5500_result_t w5500_ll_write(w5500_handle_t h, uint16_t addr, uint8_t bsb,
         }
     }
     h->plat.spi_deselect();
+    stats_spi_done(h, len);
     return W5500_OK;
 }
 
@@ -160,7 +192,7 @@ w5500_result_t w5500_read16_stable(w5500_handle_t h, uint16_t addr,
             return W5500_OK;
         }
     }
-    return W5500_ERR_TIMEOUT;
+    return stats_timeout_ret(h);
 }
 
 /* ------------------------------------------------------------------ */
@@ -185,14 +217,14 @@ w5500_result_t w5500_wait_reg_clear(w5500_handle_t h, uint16_t addr,
         }
         if (h->plat.delay_us != NULL) {
             if (elapsed_us >= timeout_us) {
-                return W5500_ERR_TIMEOUT;
+                return stats_timeout_ret(h);
             }
             h->plat.delay_us(100u);
             elapsed_us += 100u;
             continue;
         }
         if (elapsed >= h->timeout_ms) {
-            return W5500_ERR_TIMEOUT;
+            return stats_timeout_ret(h);
         }
         if (h->plat.delay_ms != NULL) {
             h->plat.delay_ms(1u);
@@ -219,14 +251,14 @@ w5500_result_t w5500_wait_reg_eq(w5500_handle_t h, uint16_t addr,
         }
         if (h->plat.delay_us != NULL) {
             if (elapsed_us >= timeout_us) {
-                return W5500_ERR_TIMEOUT;
+                return stats_timeout_ret(h);
             }
             h->plat.delay_us(100u);
             elapsed_us += 100u;
             continue;
         }
         if (elapsed >= h->timeout_ms) {
-            return W5500_ERR_TIMEOUT;
+            return stats_timeout_ret(h);
         }
         if (h->plat.delay_ms != NULL) {
             h->plat.delay_ms(1u);
@@ -470,6 +502,29 @@ w5500_result_t w5500_set_timeout(w5500_handle_t handle, uint32_t timeout_ms)
     handle->timeout_ms = timeout_ms;
     w5500_unlock(handle);
     return W5500_OK;
+}
+
+w5500_result_t w5500_set_stats(w5500_handle_t handle, w5500_stats_t *stats)
+{
+    if (handle == NULL) {
+        return W5500_ERR_PARAM;
+    }
+    w5500_lock(handle);
+    handle->stats = stats;
+    w5500_unlock(handle);
+    return W5500_OK;
+}
+
+w5500_stats_t *w5500_get_stats(w5500_handle_t handle)
+{
+    return (handle != NULL) ? handle->stats : NULL;
+}
+
+void w5500_stats_reset(w5500_stats_t *stats)
+{
+    if (stats != NULL) {
+        memset(stats, 0, sizeof(*stats));
+    }
 }
 
 w5500_result_t w5500_get_link_status(w5500_handle_t handle, bool *link_up)

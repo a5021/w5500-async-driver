@@ -136,6 +136,20 @@ Notes:
   recovers the in-flight guard from `Sn_TX_RD`/`Sn_TX_WR` and emits
   `SEND_DONE` on its own.
 
+## Diagnostics (`include/w5500.h`)
+
+| Function | Purpose |
+|----------|---------|
+| `w5500_stats_reset(&stats)` | Zero a counter block |
+| `w5500_set_stats(handle, &stats)` | Attach counters (NULL disables) |
+| `w5500_get_stats(handle)` | Return the attached block or NULL |
+
+`w5500_stats_t` counts `spi_transfers`, `spi_bytes`, `spi_errors`, `timeouts`,
+`link_changes`, `socket_opens`, `socket_closes`, `bytes_sent`,
+`bytes_received`, `datagrams_sent` and `datagrams_received`. The caller owns
+the storage; counters are plain `uint32_t` increments and need no locking
+beyond the driver's own hooks.
+
 ## DHCP (`include/w5500_dhcp.h`)
 
 | Function | Purpose |

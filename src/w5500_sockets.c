@@ -159,6 +159,9 @@ w5500_result_t w5500_socket_open_ex(w5500_handle_t handle,
     }
 
     *out_sock = slot;
+    if (handle->stats != NULL) {
+        handle->stats->socket_opens++;
+    }
     w5500_unlock(handle);
     return W5500_OK;
 }
@@ -192,6 +195,9 @@ w5500_result_t w5500_socket_close(w5500_socket_t sock)
     }
     if (rc == W5500_OK) {
         w5500_sock_release(sock);
+        if (h->stats != NULL) {
+            h->stats->socket_closes++;
+        }
     }
     w5500_unlock(h);
     return rc;
@@ -354,6 +360,12 @@ static w5500_result_t w5500_sock_tx_common(w5500_socket_t sock,
     if (rc == W5500_OK) {
         sock->send_pending = 1u; /* one SEND in flight per socket */
         *sent = chunk;
+        if (h->stats != NULL) {
+            h->stats->bytes_sent += chunk;
+            if (sock->proto == W5500_Sn_MR_UDP) {
+                h->stats->datagrams_sent++;
+            }
+        }
     }
     return rc;
 }
@@ -556,6 +568,12 @@ w5500_result_t w5500_socket_recvfrom(w5500_socket_t sock,
     }
     if (rc == W5500_OK) {
         *recvd = chunk;
+        if (h->stats != NULL) {
+            h->stats->bytes_received += chunk;
+            if (is_udp && sock->udp_remaining == 0u) {
+                h->stats->datagrams_received++;
+            }
+        }
     }
     w5500_unlock(h);
     return rc;
@@ -924,6 +942,9 @@ w5500_result_t w5500_poll(w5500_handle_t handle)
             handle->link_snapshot = phy; /* baseline only, no event */
         } else if (phy != handle->link_snapshot) {
             handle->link_snapshot = phy;
+            if (handle->stats != NULL) {
+                handle->stats->link_changes++;
+            }
             link_changed = 1u;
             link.up = (uint8_t)((phy & W5500_PHYCFGR_LNK_ON) != 0u);
             link.speed_100 = (uint8_t)((phy & W5500_PHYCFGR_SPD_100) != 0u);

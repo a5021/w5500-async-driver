@@ -186,6 +186,35 @@ w5500_result_t w5500_set_link_cb(w5500_handle_t handle,
                                  void *user_arg);
 
 /* ------------------------------------------------------------------ */
+/* Optional diagnostics                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @brief Lightweight I/O counters. The caller owns the storage; the driver
+ *        only keeps a pointer, so diagnostics cost nothing when disabled.
+ */
+typedef struct {
+    uint32_t spi_transfers;      /**< completed low-level SPI frames */
+    uint32_t spi_bytes;          /**< payload bytes shifted over SPI */
+    uint32_t spi_errors;         /**< transfers rejected (missing SPI hooks) */
+    uint32_t timeouts;           /**< bounded wait/command timeouts */
+    uint32_t link_changes;       /**< link state changes seen in poll() */
+    uint32_t socket_opens;
+    uint32_t socket_closes;
+    uint32_t bytes_sent;
+    uint32_t bytes_received;
+    uint32_t datagrams_sent;     /**< successful UDP sends */
+    uint32_t datagrams_received; /**< successful UDP reads */
+} w5500_stats_t;
+
+/** Attach a caller-owned counter block (NULL disables accounting). */
+w5500_result_t w5500_set_stats(w5500_handle_t handle, w5500_stats_t *stats);
+/** Return the attached counter block, or NULL. */
+w5500_stats_t *w5500_get_stats(w5500_handle_t handle);
+/** Zero a counter block without attaching it. */
+void w5500_stats_reset(w5500_stats_t *stats);
+
+/* ------------------------------------------------------------------ */
 /* Network configuration                                              */
 /* ------------------------------------------------------------------ */
 

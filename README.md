@@ -55,6 +55,8 @@ network controller. One repository for every development stage (see
 - **HTTP codec** (`w5500_http.h`): request/response builders and parsers with
   status, headers and `Content-Length` bodies; no heap. Used by the STM32
   client/server examples and the host demo.
+- **Diagnostics** (`w5500_stats_t`): optional caller-owned I/O counters for
+  SPI traffic, timeouts, link changes and socket bytes/datagrams.
 
 ## Repository layout
 

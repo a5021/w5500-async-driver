@@ -50,6 +50,7 @@ struct w5500_context {
     uint8_t               link_snapshot; /**< last LNK|SPD|DPX; 0xFF = unknown */
     w5500_link_cb_t       link_cb;
     void                 *link_user;
+    w5500_stats_t        *stats;    /**< optional caller-owned counters */
     struct w5500_socket   sockets[W5500_SOCKET_COUNT];
 };
 

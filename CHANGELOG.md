@@ -6,6 +6,10 @@ versioning: [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Optional diagnostics counters (`w5500_stats_t`): caller-owned, attached with
+  `w5500_set_stats()`; tracks SPI frames/bytes, timeouts, link changes,
+  socket opens/closes and sent/received bytes and datagrams. Disabled by
+  default, so the fast path has only a NULL check.
 - HTTP codec promoted to the core layer (`w5500_http.h`, `w5500_http.c`) with
   `w5500_` prefixed API, a `fuzz-http` harness, and the STM32/host examples
   linked against the core source.
