@@ -10,7 +10,7 @@
 #include "w5500.h"
 #include "w5500_sockets.h"
 #include "mock_w5500.h"
-#include "../http/http.h"
+#include "w5500_http.h"
 
 static int g_failures;
 
@@ -82,7 +82,7 @@ static void test_client(void)
     w5500_handle_t h = NULL;
     w5500_socket_t sock = NULL;
     uint8_t buf[128];
-    http_response_t r;
+    w5500_http_response_t r;
     unsigned i;
 
     mock_w5500_reset();
@@ -102,7 +102,7 @@ static void test_client(void)
     CHECK(g_events != 0u);
     CHECK_EQ(g_mock.last_sent_len[0], 37u); /* GET request length */
     {
-        uint16_t n = http_build_get(buf, sizeof(buf), "/", "example.com");
+        uint16_t n = w5500_http_build_get(buf, sizeof(buf), "/", "example.com");
         CHECK_EQ(n, g_mock.last_sent_len[0]);
         CHECK_EQ(memcmp(buf, g_mock.last_sent[0], n), 0);
     }
@@ -112,7 +112,7 @@ static void test_client(void)
     for (i = 0; i < 3u; i++) {
         (void)w5500_poll(h);
     }
-    CHECK_EQ(http_parse_response(g_rx, g_rx_len, &r), 0);
+    CHECK_EQ(w5500_http_parse_response(g_rx, g_rx_len, &r), 0);
     CHECK_EQ(r.status, 200);
     CHECK_EQ(r.reason_len, 2);
     CHECK_EQ(memcmp(r.reason, "OK", 2), 0);
@@ -128,25 +128,25 @@ static void test_server(void)
     static const uint8_t req[] =
         "GET / HTTP/1.1\r\nHost: x\r\n\r\n";
     uint8_t out[256];
-    http_request_t r;
+    w5500_http_request_t r;
     uint16_t n;
     static const uint8_t body[] = "hi";
 
-    CHECK_EQ(http_parse_request_line(req, sizeof(req) - 1u, &r), 0);
+    CHECK_EQ(w5500_http_parse_request_line(req, sizeof(req) - 1u, &r), 0);
     CHECK_EQ(r.method_len, 3);
     CHECK_EQ(memcmp(r.method, "GET", 3), 0);
     CHECK_EQ(r.path_len, 1);
     CHECK_EQ(r.path[0], '/');
 
-    n = http_build_response(out, sizeof(out), 200, "text/plain", body, 2u);
+    n = w5500_http_build_response(out, sizeof(out), 200, "text/plain", body, 2u);
     CHECK(n != 0u);
     {
-        http_response_t parsed;
+        w5500_http_response_t parsed;
         uint8_t full[256];
         /* Wrap the generated response plus its body into a buffer the
            parser can consume (build_response already includes the body). */
         memcpy(full, out, n);
-        CHECK_EQ(http_parse_response(full, n, &parsed), 0);
+        CHECK_EQ(w5500_http_parse_response(full, n, &parsed), 0);
         CHECK_EQ(parsed.status, 200);
         CHECK_EQ(parsed.body_len, 2);
         CHECK_EQ(memcmp(parsed.body, "hi", 2), 0);

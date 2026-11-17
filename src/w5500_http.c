@@ -1,10 +1,10 @@
 /**
- * @file http.c
- * @brief Minimal HTTP/1.x codec used by the examples (see http.h).
+ * @file w5500_http.c
+ * @brief Minimal HTTP/1.x codec shared by the core layer and examples.
  */
 #include <string.h>
 
-#include "http.h"
+#include "w5500_http.h"
 
 #define HTTP_CRLF_CRLF "\r\n\r\n"
 
@@ -19,7 +19,7 @@ static const char *http_reason(uint16_t status)
     }
 }
 
-const char *http_header_value(const uint8_t *headers, uint16_t len,
+const char *w5500_http_header_value(const uint8_t *headers, uint16_t len,
                               const char *name, uint16_t *value_len)
 {
     size_t nlen = strlen(name);
@@ -72,8 +72,8 @@ const char *http_header_value(const uint8_t *headers, uint16_t len,
     return NULL;
 }
 
-int http_parse_response(const uint8_t *buf, uint16_t len,
-                        http_response_t *out)
+int w5500_http_parse_response(const uint8_t *buf, uint16_t len,
+                        w5500_http_response_t *out)
 {
     uint16_t i;
     uint16_t sep = 0u;
@@ -127,7 +127,7 @@ int http_parse_response(const uint8_t *buf, uint16_t len,
     out->headers = buf + 9u;
     out->headers_len = (uint16_t)(sep - 9u);
 
-    cl = http_header_value(buf + 9u, (uint16_t)(sep - 9u), "Content-Length",
+    cl = w5500_http_header_value(buf + 9u, (uint16_t)(sep - 9u), "Content-Length",
                            &cl_len);
     if (cl == NULL || cl_len == 0u) {
         content_len = 0u; /* no body */
@@ -150,7 +150,7 @@ int http_parse_response(const uint8_t *buf, uint16_t len,
     return 0;
 }
 
-uint16_t http_build_get(uint8_t *buf, uint16_t cap, const char *path,
+uint16_t w5500_http_build_get(uint8_t *buf, uint16_t cap, const char *path,
                         const char *host)
 {
     static const char p1[] = "GET ";
@@ -177,8 +177,8 @@ uint16_t http_build_get(uint8_t *buf, uint16_t cap, const char *path,
     return (uint16_t)(off + sizeof(p3) - 1u);
 }
 
-int http_parse_request_line(const uint8_t *buf, uint16_t len,
-                            http_request_t *out)
+int w5500_http_parse_request_line(const uint8_t *buf, uint16_t len,
+                            w5500_http_request_t *out)
 {
     uint16_t method_end = 0u;
     uint16_t path_start;
@@ -214,7 +214,7 @@ int http_parse_request_line(const uint8_t *buf, uint16_t len,
     return 0;
 }
 
-uint16_t http_build_response(uint8_t *buf, uint16_t cap, uint16_t status,
+uint16_t w5500_http_build_response(uint8_t *buf, uint16_t cap, uint16_t status,
                              const char *content_type,
                              const uint8_t *body, uint16_t body_len)
 {

@@ -1,6 +1,6 @@
 # Fuzzing the W5500 driver
 
-Sixteen libFuzzer harnesses run against the chip emulator
+Seventeen libFuzzer harnesses run against the chip emulator
 (`tests/mock_w5500.c`) with ASan/UBSan. Every property is checked with
 `abort()`, so libFuzzer stops and stores the failing input as a normal crash.
 
@@ -24,6 +24,7 @@ Sixteen libFuzzer harnesses run against the chip emulator
 | `fuzz-modbus` | Modbus TCP codecs: request (`w5500_mb_parse_adu`) and response (`w5500_mb_parse_response`) | no OOB, MBAP length consistency, count/byte-count rules for FC3/4/16, txid must match, deterministic |
 | `fuzz-mqtt` | MQTT 3.1.1 codec: remaining-length decoder, parser and builders | no OOB, header length 2..5, `consumed` inside the input, topic/payload alias the input, deterministic, builders reject short buffers and round-trip |
 | `fuzz-mqtt-state` | a live MQTT client: broker packets, clock steps, publish/subscribe, stop/reconnect | documented statuses only, callbacks carry topic/payload only for PUBLISH, lock balance |
+| `fuzz-http` | core HTTP codec: response/request-line parsers, header lookup and builders | no OOB, deterministic parsers, decoded pointers alias the input, builders round-trip and reject short buffers |
 
 Shared fixtures: `tests/fuzz/fuzz_common.h` (emulator reset per input, a
 fixed 4 ms timeout - the timeout itself is **not** fuzzed so an input cannot
@@ -36,7 +37,7 @@ Driver internals are visible to the harnesses through
 ## Running
 
 ```sh
-make fuzz-all                    # all 16 targets, libFuzzer + ASan/UBSan, 120 s
+make fuzz-all                    # all 17 targets, libFuzzer + ASan/UBSan, 120 s
 make fuzz-reg-access             # one target
 FUZZ_MODE=asan make fuzz-all     # standalone runner + ASan/UBSan (no libFuzzer)
 FUZZ_TIME=60 make fuzz-all       # seconds per target

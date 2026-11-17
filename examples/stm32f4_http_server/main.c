@@ -12,7 +12,7 @@
 #include "w5500.h"
 #include "w5500_sockets.h"
 #include "w5500_port_stm32.h"
-#include "../http/http.h"
+#include "w5500_http.h"
 
 #define HTTP_BUF_BYTES 1024u
 
@@ -48,7 +48,7 @@ static void send_reply(w5500_socket_t sock, uint16_t status,
                        const char *content_type,
                        const uint8_t *body, uint16_t body_len)
 {
-    uint16_t n = http_build_response(g_buf, sizeof(g_buf), status,
+    uint16_t n = w5500_http_build_response(g_buf, sizeof(g_buf), status,
                                      content_type, body, body_len);
     if (n == 0u) {
         (void)w5500_socket_close(sock);
@@ -74,7 +74,7 @@ static void on_client_event(w5500_socket_t sock, w5500_event_t event,
     case W5500_EVENT_DATA_RECEIVED: {
         uint8_t chunk[128];
         uint16_t n;
-        http_request_t req;
+        w5500_http_request_t req;
 
         while (g_rx_len < sizeof(g_buf)) {
             uint16_t room = (uint16_t)(sizeof(g_buf) - g_rx_len);
@@ -88,7 +88,7 @@ static void on_client_event(w5500_socket_t sock, w5500_event_t event,
             }
             g_rx_len = (uint16_t)(g_rx_len + n);
         }
-        if (http_parse_request_line(g_buf, g_rx_len, &req) != 0) {
+        if (w5500_http_parse_request_line(g_buf, g_rx_len, &req) != 0) {
             break; /* wait for more bytes of the request line */
         }
         if (req.method_len == 3u && memcmp(req.method, "GET", 3u) == 0 &&

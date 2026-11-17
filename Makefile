@@ -15,10 +15,10 @@ CPPFLAGS = -Iinclude -Isrc
 BUILD    := build
 CORE_BASE := src/w5500.c src/w5500_sockets.c
 PROTO_SRC := src/w5500_dhcp.c src/w5500_dns.c src/w5500_sntp.c \
-             src/w5500_modbus.c src/w5500_mqtt.c
+             src/w5500_modbus.c src/w5500_mqtt.c src/w5500_http.c
 PROTO_OBJ := $(BUILD)/w5500_dhcp.o $(BUILD)/w5500_dns.o \
              $(BUILD)/w5500_sntp.o $(BUILD)/w5500_modbus.o \
-             $(BUILD)/w5500_mqtt.o
+             $(BUILD)/w5500_mqtt.o $(BUILD)/w5500_http.o
 # W5500_MINIMAL=1 builds only the chip core + socket layer (no protocols).
 ifeq ($(W5500_MINIMAL),1)
 CORE_SRC := $(CORE_BASE)
@@ -64,6 +64,9 @@ $(BUILD)/w5500_mqtt.o: src/w5500_mqtt.c src/w5500_mqtt_internal.h \
                        include/w5500_mqtt.h include/w5500_sockets.h | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
+$(BUILD)/w5500_http.o: src/w5500_http.c include/w5500_http.h | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
 $(BUILD)/libw5500.a: $(CORE_OBJ)
 	ar rcs $@ $(CORE_OBJ)
 
@@ -81,8 +84,8 @@ $(BUILD)/test_modbus.exe: $(CORE_SRC) tests/test_modbus.c tests/mock_w5500.c | $
 	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests $(CORE_SRC) tests/test_modbus.c \
 	    tests/mock_w5500.c -o $@
 
-$(BUILD)/test_http.exe: examples/http/http.c tests/test_http.c | $(BUILD)
-	$(CC) $(CFLAGS) $(CPPFLAGS) examples/http/http.c tests/test_http.c -o $@
+$(BUILD)/test_http.exe: src/w5500_http.c tests/test_http.c | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) src/w5500_http.c tests/test_http.c -o $@
 
 $(BUILD)/test_mqtt.exe: $(CORE_SRC) tests/test_mqtt.c tests/mock_w5500.c | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests $(CORE_SRC) tests/test_mqtt.c \
@@ -116,9 +119,9 @@ $(BUILD)/host_mock_demo.exe: examples/host_mock_demo/main.c $(CORE_SRC) tests/mo
 	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests examples/host_mock_demo/main.c \
 	    $(CORE_SRC) tests/mock_w5500.c -o $@
 
-$(BUILD)/host_http_demo.exe: examples/host_http_demo/main.c examples/http/http.c $(CORE_SRC) tests/mock_w5500.c | $(BUILD)
+$(BUILD)/host_http_demo.exe: examples/host_http_demo/main.c $(CORE_SRC) tests/mock_w5500.c | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -Iinclude -Iexamples -Itests \
-	    examples/host_http_demo/main.c examples/http/http.c $(CORE_SRC) \
+	    examples/host_http_demo/main.c $(CORE_SRC) \
 	    tests/mock_w5500.c -o $@
 
 examples: $(EXAMPLE_HOST_BINS)
@@ -184,7 +187,7 @@ endef
 .PHONY: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
         fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns \
         fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-sntp-state fuzz-modbus \
-        fuzz-mqtt fuzz-mqtt-state fuzz-all
+        fuzz-mqtt fuzz-mqtt-state fuzz-http fuzz-all
 
 $(FUZZ_OUT):
 	mkdir -p $@
@@ -266,8 +269,12 @@ fuzz-mqtt-state: | $(FUZZ_OUT)
 	$(FUZZ_CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_mqtt_state.c $(FUZZ_SRC) \
 	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_mqtt_state.exe
 	$(call run_fuzz,fuzz_mqtt_state)
+fuzz-http: | $(FUZZ_OUT)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_http.c $(FUZZ_SRC) \
+	    $(FUZZ_LDFLAGS) -o $(FUZZ_OUT)/fuzz_http.exe
+	$(call run_fuzz,fuzz_http)
 
 fuzz-all: fuzz-reg-access fuzz-socket-lifecycle fuzz-poll fuzz-send-recv \
           fuzz-net-config fuzz-context fuzz-spi-frame fuzz-dhcp fuzz-dns \
           fuzz-dhcp-state fuzz-dns-state fuzz-sntp fuzz-sntp-state fuzz-modbus \
-          fuzz-mqtt fuzz-mqtt-state
+          fuzz-mqtt fuzz-mqtt-state fuzz-http

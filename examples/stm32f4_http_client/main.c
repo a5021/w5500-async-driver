@@ -15,7 +15,7 @@
 #include "w5500_dhcp.h"
 #include "w5500_dns.h"
 #include "w5500_port_stm32.h"
-#include "../http/http.h"
+#include "w5500_http.h"
 
 #define DHCP_MEM_BYTES 2048u
 #define DNS_MEM_BYTES  2048u
@@ -79,9 +79,9 @@ static void on_dns(w5500_dns_t *dns, const uint8_t ip[4],
 
 static void http_report(void)
 {
-    http_response_t r;
+    w5500_http_response_t r;
 
-    if (http_parse_response(g_http_buf, g_http_len, &r) != 0) {
+    if (w5500_http_parse_response(g_http_buf, g_http_len, &r) != 0) {
         printf("http: incomplete response (%u bytes)\n", g_http_len);
         return;
     }
@@ -112,7 +112,7 @@ static void on_socket_event(w5500_socket_t sock, w5500_event_t event,
     (void)user_arg;
     switch (event) {
     case W5500_EVENT_CONNECTED: {
-        uint16_t len = http_build_get(g_http_buf, sizeof(g_http_buf),
+        uint16_t len = w5500_http_build_get(g_http_buf, sizeof(g_http_buf),
                                       g_path, g_host);
         if (len == 0u) {
             (void)w5500_socket_close(sock);

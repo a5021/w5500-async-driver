@@ -6,6 +6,9 @@ versioning: [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- HTTP codec promoted to the core layer (`w5500_http.h`, `w5500_http.c`) with
+  `w5500_` prefixed API, a `fuzz-http` harness, and the STM32/host examples
+  linked against the core source.
 - DNS resolver upgrades: CNAME chain following, up to four A records per
   answer with TTL (`w5500_dns_init_multi()`), and an opt-in four-entry answer
   cache (`w5500_dns_set_cache()`, `w5500_dns_cache_clear()`). The legacy
@@ -14,7 +17,7 @@ versioning: [Semantic Versioning](https://semver.org/).
   socket, caller-owned storage, tick-driven poll, keepalive PINGREQ and
   auto-reconnect on link loss; codec and state-machine fuzzing
   (`fuzz-mqtt`, `fuzz-mqtt-state`).
-- Basic HTTP examples: shared codec (`examples/http/`), STM32 HTTP client
+- Basic HTTP examples: shared codec (`w5500_http.h`), STM32 HTTP client
   (DHCP -> DNS -> GET -> parsed status/headers/body), STM32 HTTP server
   (port 80, 200/404), host demo in CI, `tests/test_http.c`.
 - Stronger tests: unstable FSR/RSR counter (read16_stable timeout), UDP

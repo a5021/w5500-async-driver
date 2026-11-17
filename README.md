@@ -52,6 +52,9 @@ network controller. One repository for every development stage (see
 - **MQTT 3.1.1 client** (`w5500_mqtt.h`): QoS 0 publish/subscribe over one
   TCP socket, caller-owned storage, tick driven, keepalive PINGREQ, callback
   delivery of inbound PUBLISH; codec and state machine are fuzzed.
+- **HTTP codec** (`w5500_http.h`): request/response builders and parsers with
+  status, headers and `Content-Length` bodies; no heap. Used by the STM32
+  client/server examples and the host demo.
 
 ## Repository layout
 
@@ -63,7 +66,8 @@ network controller. One repository for every development stage (see
 │   ├── w5500_dns.h       # DNS resolver (separate layer)
 │   ├── w5500_sntp.h      # SNTP client (separate layer)
 │   ├── w5500_modbus.h    # Modbus TCP: server and client
-│   └── w5500_mqtt.h      # MQTT 3.1.1 client (separate layer)
+│   ├── w5500_mqtt.h      # MQTT 3.1.1 client (separate layer)
+│   └── w5500_http.h      # Basic HTTP/1.x codec
 ├── src/                  # Core implementation (plain C99)
 │   ├── w5500.c
 │   ├── w5500_sockets.c
@@ -72,6 +76,7 @@ network controller. One repository for every development stage (see
 │   ├── w5500_sntp.c
 │   ├── w5500_modbus.c
 │   ├── w5500_mqtt.c
+│   ├── w5500_http.c
 │   ├── w5500_internal.h  # Internal context (hidden from users)
 │   └── w5500_registers.h # W5500 register map
 ├── ports/
@@ -294,7 +299,7 @@ duplex (`full_duplex`).
 ## HTTP examples
 
 Basic HTTP client and server examples live under
-[examples/](../examples/README.md): a shared codec (`examples/http/`),
+[examples/](../examples/README.md) and use the core codec (`w5500_http.h`):
 an STM32 client (DHCP -> DNS -> GET -> parsed response), an STM32 server
 (port 80, 200/404), and a host demo executed by `make examples`.
 Only status, headers and `Content-Length` bodies are handled: no TLS,

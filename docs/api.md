@@ -234,3 +234,21 @@ const uint8_t *topic, uint16_t topic_len, const uint8_t *payload,
 uint16_t payload_len, void *user)`. Topic and payload are non-NULL only for
 `W5500_MQTT_EVENT_PUBLISH` and are valid for the call only. Other events are
 `CONNECTED`, `SUBACK`, `DISCONNECTED` and `ERROR`.
+
+## HTTP (`include/w5500_http.h`)
+
+Pure codec: no socket or driver dependency, no heap. All decoded pointers
+alias the input buffer and stay valid only while that buffer is alive.
+
+| Function | Purpose |
+|----------|---------|
+| `w5500_http_parse_response(buf, len, &out)` | Parse status line, headers and body |
+| `w5500_http_parse_request_line(buf, len, &out)` | Parse `GET <path> HTTP/1.x` |
+| `w5500_http_header_value(headers, len, name, &value_len)` | Find a header value |
+| `w5500_http_build_get(buf, cap, path, host)` | Build an HTTP/1.0 GET request |
+| `w5500_http_build_response(buf, cap, status, content_type, body, len)` | Build an HTTP/1.0 response |
+
+`w5500_http_response_t` carries `status`, `reason`/`reason_len`,
+`headers`/`headers_len`, `body`/`body_len` and a `truncated` flag set when
+`Content-Length` exceeds the available bytes. Scope: no TLS, chunked
+encoding, keep-alive or POST.

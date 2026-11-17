@@ -8,7 +8,7 @@
 | [stm32f4_modbus_server](stm32f4_modbus_server/main.c) | Modbus TCP server (FC 3/4/6/16), callback register map, live values in FC 4, restarts on link-up | yes (`make examples`) |
 | [stm32f4_bench](stm32f4_bench/main.c) | Cycle-count benchmarks for check, send staging and idle poll (DWT) | syntax only |
 | [host_mock_demo](host_mock_demo/main.c) | Whole stack on the host against the emulator: DHCP -> DNS -> TCP, asserted | yes (built and executed by `make examples`) |
-| [http/http.c](http/http.c) | Shared HTTP codec: parse responses/request lines, build GET and responses; no heap, no MCU deps | yes (`test_http`) |
+| [w5500_http.c](../src/w5500_http.c) | Shared core HTTP codec: parse responses/request lines, build GET and responses; no heap, no MCU deps | yes (`test_http`) |
 | [stm32f4_http_client](stm32f4_http_client/main.c) | DHCP -> DNS -> TCP:80 -> HTTP GET, parsed response (status, headers, body) | yes (`make examples`) |
 | [stm32f4_http_server](stm32f4_http_server/main.c) | Minimal HTTP server on port 80: GET / -> 200 HTML, else 404, re-arms listener | yes (`make examples`) |
 | [host_http_demo](host_http_demo/main.c) | HTTP codec + driver end-to-end against the emulator, asserted | yes (built and executed by `make examples`) |
@@ -46,4 +46,4 @@ The HTTP codec and examples implement the basic subset only: status line,
 headers and a `Content-Length` body; GET requests and a request-line parser.
 No TLS/HTTPS, no chunked transfer encoding, no keep-alive (one request per
 connection), no POST/forms/JSON. If `Content-Length` exceeds the receive
-buffer, the body is truncated and `http_response_t.truncated` is set.
+buffer, the body is truncated and `w5500_http_response_t.truncated` is set.
