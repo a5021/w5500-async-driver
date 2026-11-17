@@ -588,19 +588,24 @@ static void test_close_timeout_releases_slot(void)
              W5500_OK);
     CHECK(s != NULL);
 
-    /* Make Sn_CR stick so close() times out. */
+    /* Make Sn_CR stick so close() times out. close() releases the slot even
+       on a timeout, but open() also times out while Sn_CR is stuck, so the
+       pool is temporarily unusable until the chip recovers. */
     g_mock.cr_stuck = 1u;
     CHECK_EQ(w5500_socket_close(s), W5500_ERR_TIMEOUT);
-    g_mock.cr_stuck = 0u;
-
-    /* The slot must have been released despite the timeout: a fresh open
-       must still succeed instead of returning ERR_NOMEM. */
+    /* The slot was released by close(), but open() cannot complete because
+       Sn_CR never self-clears. */
     CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5000u, evt_cb, NULL, &s),
+             W5500_ERR_TIMEOUT);
+    g_mock.cr_stuck = 0u;
+    /* Once the chip recovers, a fresh open succeeds. */
     CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5000u, evt_cb, NULL, &s),
              W5500_OK);
     CHECK(s != NULL);
     CHECK_EQ(w5500_socket_close(s), W5500_OK);
     w5500_deinit(h);
+    CHECK_EQ(g_mock.lock_count, g_mock.unlock_count);
 }
 
 static void test_open_rejects_bad_args(void)

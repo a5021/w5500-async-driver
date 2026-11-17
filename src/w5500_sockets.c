@@ -193,16 +193,13 @@ w5500_result_t w5500_socket_close(w5500_socket_t sock)
         rc = w5500_wait_reg_eq(h, W5500_Sn_SR, W5500_BSB_SREG(sock->id),
                                W5500_SOCK_CLOSED);
     }
-    if (rc == W5500_OK) {
-        w5500_sock_release(sock);
-        if (h->stats != NULL) {
+    /* Always release the slot: a close that could not be confirmed still
+       leaves the socket unusable from the driver's point of view. */
+    w5500_sock_release(sock);
+    if (h->stats != NULL) {
+        if (rc == W5500_OK) {
             h->stats->socket_closes++;
-        }
-    } else {
-        /* Timeout / chip error: release the slot anyway so the caller does
-           not lose all four sockets after a few failed closes. */
-        w5500_sock_release(sock);
-        if (h->stats != NULL) {
+        } else {
             h->stats->timeouts++;
         }
     }

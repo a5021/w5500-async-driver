@@ -265,9 +265,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             w5500_result_t rc = w5500_socket_close(s);
             p++;
             fuzz_check_rc(rc);
-            if (rc == W5500_OK) {
-                g_slots[idx] = NULL;
-            }
+            /* close() always releases the slot, even on a timeout. */
+            g_slots[idx] = NULL;
             break;
         }
         case 6u: /* API_DISCONNECT */
