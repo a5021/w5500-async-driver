@@ -155,14 +155,21 @@ to the chip before the callback.
 | Function | Purpose |
 |----------|---------|
 | `w5500_dns_size()` | Storage bytes |
-| `w5500_dns_init(&r, mem, size, chip, server_ip, cb, user)` | Initialize |
-| `w5500_dns_set_server(r, ip)` | Change server |
+| `w5500_dns_init(&r, mem, size, chip, server_ip, cb, user)` | Initialize (first A only) |
+| `w5500_dns_init_multi(&r, mem, size, chip, server_ip, cb, user)` | Initialize (all A records + TTL) |
+| `w5500_dns_set_server(r, ip)` | Change server (clears the cache) |
+| `w5500_dns_set_cache(r, enable)` | Enable/disable the answer cache (off by default) |
+| `w5500_dns_cache_clear(r)` | Drop cached answers |
 | `w5500_dns_start(r, name, now_ms)` | A query (name is copied) |
 | `w5500_dns_poll(r, now_ms)` | Receive, retry, time out |
 | `w5500_dns_stop(r)` | Close the socket |
 
 Callback status: `OK`, `ERR_TIMEOUT` (no answer), `ERR_STATE`
-(NXDOMAIN/SERVFAIL or a broken reply).
+(NXDOMAIN/SERVFAIL or a broken reply). The multi callback receives
+`const w5500_dns_addr_t *addrs` with up to `W5500_DNS_MAX_ADDRS` entries, each
+holding `ip[4]` and `ttl_s`; `count` is 0 on error. CNAME chains are followed.
+A cached answer is delivered from the next `poll()` after `start()`, without
+sending a query.
 
 ## SNTP (`include/w5500_sntp.h`)
 

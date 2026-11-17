@@ -40,7 +40,8 @@ network controller. One repository for every development stage (see
   and re-acquire at 100% of the lease, no heap, tick driven; the lease is
   applied to the chip before the callback.
 - **DNS resolver** (`w5500_dns.h`): A queries, compression-pointer-safe
-  parsing, retries and timeouts, a separate layer over a regular UDP socket.
+  parsing, CNAME chains and multiple A records with TTL, an opt-in answer
+  cache, retries and timeouts, a separate layer over a regular UDP socket.
 - **SNTP client** (`w5500_sntp.h`): mode-3 requests, Unix time from the
   transmit timestamp, retries and timeout.
 - **Multicast**: `W5500_SOCK_F_MULTI` and `W5500_SOCK_F_IGMP_V2`

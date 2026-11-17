@@ -76,9 +76,16 @@ own schedule.
   A query with a generated id.
 - A reply is accepted only when the id matches and `QR`/`RCODE` are sane; a
   non-zero RCODE completes immediately with `W5500_ERR_STATE`.
-- Only an A record in the reply completes the query. A CNAME-only reply is
-  ignored and the request eventually times out (send an A query directly to
-  a resolver that includes the A record).
+- Answer parsing follows CNAME chains: a CNAME whose owner matches the name
+  being resolved replaces the expected owner, so a later A record for the
+  canonical name completes the query. Up to four A records are collected.
+- The default callback reports the first A address. Use
+  `w5500_dns_init_multi()` to receive every address with its TTL; the array
+  points into the resolver and stays valid only for the call.
+- The answer cache is off by default. `w5500_dns_set_cache(r, 1)` enables four
+  TTL-bound entries; a cache hit is reported from the next `poll()` after
+  `start()`, with no packet on the wire. `w5500_dns_cache_clear()` and a
+  server change drop all entries. Entries with TTL 0 are not stored.
 - Retries: every 2 s, three transmissions; `ERR_TIMEOUT` afterwards.
 - Starting a new query cancels the previous one silently (no callback).
 

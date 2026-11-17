@@ -17,28 +17,44 @@
 #define DNS_LOCAL_PORT     53535u
 #define DNS_RETRY_MS       2000u
 #define DNS_MAX_ATTEMPTS   3u
+#define DNS_CACHE_SLOTS    4u
+#define DNS_CACHE_NAME_LEN 128u
+#define DNS_NAME_MAX       254u
 
 #define DNS_STATE_OFF      0u
 #define DNS_STATE_WAITING  1u
+
+typedef struct {
+    char     name[DNS_CACHE_NAME_LEN];
+    uint8_t  ip[4];
+    uint32_t expire; /* absolute ms, saturated at 0x7FFFFFFF */
+    uint8_t  used;
+} dns_cache_entry_t;
 
 struct w5500_dns {
     w5500_handle_t  chip;
     w5500_socket_t  sock;
 
     uint8_t         server[4];
-    char            name[254];
+    char            name[DNS_NAME_MAX];
     uint32_t        qid_counter;
     uint16_t        qid;
 
     uint32_t        t_last;
     uint8_t         state;
     uint8_t         attempts;
+    uint8_t         cache_on;
+    uint8_t         from_cache;
+    uint8_t         cache_slot;
+    w5500_dns_addr_t cache_hit;
 
-    w5500_dns_cb_t  cb;
-    void           *user;
+    w5500_dns_cb_t       cb;
+    w5500_dns_multi_cb_t multi_cb;
+    void                *user;
 
-    uint8_t         rx[DNS_MAX_PKT];
-    uint8_t         tx[DNS_MAX_PKT];
+    dns_cache_entry_t cache[DNS_CACHE_SLOTS];
+    uint8_t           rx[DNS_MAX_PKT];
+    uint8_t           tx[DNS_MAX_PKT];
 };
 
 /* ------------------------------------------------------------------ */
@@ -104,33 +120,144 @@ static int dns_skip_name(const uint8_t *pkt, uint16_t len, uint16_t *off)
     return -1;
 }
 
-int w5500_dns_parse_response(const uint8_t *pkt, uint16_t len, uint16_t qid,
-                             uint8_t ip_out[4])
+/** Decode a (possibly compressed) name into a lowercase dotted string. */
+static int dns_decode_name(const uint8_t *pkt, uint16_t len, uint16_t off,
+                           char *out, size_t cap, uint16_t *end_off)
 {
+    uint16_t o = off;
+    uint16_t jumps = 0u;
+    uint16_t labels = 0u;
+    size_t n = 0u;
+    int followed = 0;
+
+    if (pkt == NULL || out == NULL || end_off == NULL || cap == 0u) {
+        return -1;
+    }
+    out[0] = '\0';
+    for (;;) {
+        uint8_t l;
+        uint16_t i;
+
+        if ((uint32_t)o >= (uint32_t)len) {
+            return -1;
+        }
+        l = pkt[o];
+        if ((l & 0xC0u) == 0xC0u) {
+            uint16_t target;
+            if ((uint32_t)o + 2u > (uint32_t)len) {
+                return -1;
+            }
+            target = (uint16_t)((((uint16_t)(l & 0x3Fu)) << 8) |
+                                pkt[o + 1u]);
+            if ((uint32_t)target >= (uint32_t)len) {
+                return -1;
+            }
+            if (!followed) {
+                *end_off = (uint16_t)(o + 2u);
+            }
+            if (++jumps > 16u) {
+                return -1;
+            }
+            o = target;
+            followed = 1;
+            continue;
+        }
+        if ((l & 0xC0u) != 0u) {
+            return -1;
+        }
+        o = (uint16_t)(o + 1u);
+        if (l == 0u) {
+            if (!followed) {
+                *end_off = o;
+            }
+            out[n] = '\0';
+            return 0;
+        }
+        if ((uint32_t)o + (uint32_t)l > (uint32_t)len) {
+            return -1;
+        }
+        if (n > 0u) {
+            if (n + 1u >= cap) {
+                return -1;
+            }
+            out[n++] = '.';
+        }
+        if (n + (size_t)l >= cap) {
+            return -1;
+        }
+        for (i = 0u; i < (uint16_t)l; i++) {
+            uint8_t c = pkt[o + i];
+            out[n++] = (c >= (uint8_t)'A' && c <= (uint8_t)'Z')
+                           ? (char)(c + 32u) : (char)c;
+        }
+        o = (uint16_t)(o + l);
+        if (++labels > 128u) {
+            return -1;
+        }
+    }
+}
+
+static int dns_name_eq(const char *a, const char *b)
+{
+    size_t i;
+
+    if (a == NULL || b == NULL) {
+        return 0;
+    }
+    for (i = 0u; a[i] != '\0' && b[i] != '\0'; i++) {
+        uint8_t ca = (uint8_t)a[i];
+        uint8_t cb = (uint8_t)b[i];
+        if (ca >= (uint8_t)'A' && ca <= (uint8_t)'Z') {
+            ca = (uint8_t)(ca + 32u);
+        }
+        if (cb >= (uint8_t)'A' && cb <= (uint8_t)'Z') {
+            cb = (uint8_t)(cb + 32u);
+        }
+        if (ca != cb) {
+            return 0;
+        }
+    }
+    return a[i] == '\0' && b[i] == '\0';
+}
+
+int w5500_dns_parse_response_ex(const uint8_t *pkt, uint16_t len, uint16_t qid,
+                                const char *wanted, w5500_dns_addr_t *addrs,
+                                uint8_t max_addrs, uint8_t *count)
+{
+    char     want[DNS_NAME_MAX];
+    char     owner[DNS_NAME_MAX];
+    char     target[DNS_NAME_MAX];
     uint16_t flags;
     uint16_t qdcount;
     uint16_t ancount;
     uint16_t off;
     uint16_t i;
+    uint8_t  found = 0u;
 
-    if (pkt == NULL || ip_out == NULL || len < DNS_HEADER_LEN) {
+    if (pkt == NULL || addrs == NULL || count == NULL || max_addrs == 0u ||
+        max_addrs > W5500_DNS_MAX_ADDRS || len < DNS_HEADER_LEN) {
         return -1;
     }
+    *count = 0u;
     if ((((uint16_t)pkt[0] << 8) | pkt[1]) != qid) {
         return -1;
     }
     flags = (uint16_t)(((uint16_t)pkt[2] << 8) | pkt[3]);
-    if ((flags & 0x8000u) == 0u) {
-        return -1; /* not a response */
-    }
-    if ((flags & 0x000Fu) != 0u) {
-        return -1; /* RCODE != NOERROR */
+    if ((flags & 0x8000u) == 0u || (flags & 0x000Fu) != 0u) {
+        return -1;
     }
     qdcount = (uint16_t)(((uint16_t)pkt[4] << 8) | pkt[5]);
     ancount = (uint16_t)(((uint16_t)pkt[6] << 8) | pkt[7]);
 
+    if (wanted != NULL && strlen(wanted) >= sizeof(want)) {
+        return -1;
+    }
+    if (wanted != NULL) {
+        strcpy(want, wanted);
+    }
+
     off = DNS_HEADER_LEN;
-    for (i = 0; i < qdcount; i++) {
+    for (i = 0u; i < qdcount; i++) {
         if (dns_skip_name(pkt, len, &off) != 0 ||
             (uint32_t)off + 4u > (uint32_t)len) {
             return -1;
@@ -138,31 +265,75 @@ int w5500_dns_parse_response(const uint8_t *pkt, uint16_t len, uint16_t qid,
         off = (uint16_t)(off + 4u);
     }
 
-    for (i = 0; i < ancount; i++) {
-        uint16_t type;
+    for (i = 0u; i < ancount; i++) {
+        uint16_t rtype;
         uint16_t cls;
+        uint32_t ttl;
         uint16_t rdlen;
+        uint16_t rdata;
+        uint16_t end;
 
-        if (dns_skip_name(pkt, len, &off) != 0) {
+        if (dns_decode_name(pkt, len, off, owner, sizeof(owner), &end) != 0) {
             return -1;
         }
+        off = end;
         if ((uint32_t)off + 10u > (uint32_t)len) {
             return -1;
         }
-        type = (uint16_t)(((uint16_t)pkt[off] << 8) | pkt[off + 1u]);
+        rtype = (uint16_t)(((uint16_t)pkt[off] << 8) | pkt[off + 1u]);
         cls = (uint16_t)(((uint16_t)pkt[off + 2u] << 8) | pkt[off + 3u]);
+        ttl = ((uint32_t)pkt[off + 4u] << 24) |
+              ((uint32_t)pkt[off + 5u] << 16) |
+              ((uint32_t)pkt[off + 6u] << 8) |
+              (uint32_t)pkt[off + 7u];
         rdlen = (uint16_t)(((uint16_t)pkt[off + 8u] << 8) | pkt[off + 9u]);
-        off = (uint16_t)(off + 10u);
-        if ((uint32_t)off + (uint32_t)rdlen > (uint32_t)len) {
+        rdata = (uint16_t)(off + 10u);
+        if ((uint32_t)rdata + (uint32_t)rdlen > (uint32_t)len) {
             return -1;
         }
-        if (type == 1u && cls == 1u && rdlen == 4u) {
-            memcpy(ip_out, pkt + off, 4u);
-            return 0;
+        off = (uint16_t)(rdata + rdlen);
+
+        if (cls != 1u) {
+            continue;
         }
-        off = (uint16_t)(off + rdlen);
+        if (rtype == 5u) { /* CNAME */
+            if (wanted == NULL || dns_name_eq(owner, want)) {
+                if (dns_decode_name(pkt, len, rdata, target, sizeof(target),
+                                    &end) != 0 ||
+                    strlen(target) >= sizeof(want)) {
+                    return -1;
+                }
+                strcpy(want, target);
+            }
+        } else if (rtype == 1u && rdlen == 4u) { /* A */
+            if (wanted == NULL || dns_name_eq(owner, want)) {
+                if (found < max_addrs) {
+                    memcpy(addrs[found].ip, pkt + rdata, 4u);
+                    addrs[found].ttl_s = ttl;
+                    found++;
+                }
+            }
+        }
     }
-    return -1;
+    *count = found;
+    return 0;
+}
+
+int w5500_dns_parse_response(const uint8_t *pkt, uint16_t len, uint16_t qid,
+                             uint8_t ip_out[4])
+{
+    w5500_dns_addr_t addr;
+    uint8_t count = 0u;
+
+    if (ip_out == NULL) {
+        return -1;
+    }
+    if (w5500_dns_parse_response_ex(pkt, len, qid, NULL, &addr, 1u,
+                                    &count) != 0 || count == 0u) {
+        return -1;
+    }
+    memcpy(ip_out, addr.ip, 4u);
+    return 0;
 }
 
 static uint16_t dns_build_query(struct w5500_dns *d)
@@ -207,15 +378,76 @@ static void dns_noop_cb(w5500_socket_t sock, w5500_event_t event,
     (void)user_arg;
 }
 
-static void dns_finish(struct w5500_dns *d, const uint8_t ip[4],
-                       w5500_result_t status)
+static void dns_finish(struct w5500_dns *d, const w5500_dns_addr_t *addrs,
+                       uint8_t count, w5500_result_t status)
 {
     static const uint8_t zero[4] = {0u, 0u, 0u, 0u};
 
     d->state = DNS_STATE_OFF;
-    if (d->cb != NULL) {
-        d->cb(d, (ip != NULL) ? ip : zero, status, d->user);
+    d->from_cache = 0u;
+    if (d->multi_cb != NULL) {
+        d->multi_cb(d, (count > 0u) ? addrs : NULL, count, status, d->user);
+    } else if (d->cb != NULL) {
+        d->cb(d, (count > 0u) ? addrs[0].ip : zero, status, d->user);
     }
+}
+
+static void dns_cache_clear(struct w5500_dns *d)
+{
+    memset(d->cache, 0, sizeof(d->cache));
+    d->cache_slot = 0u;
+}
+
+static uint32_t dns_expire(uint32_t now, uint32_t ttl_s)
+{
+    uint64_t end = (uint64_t)now + (uint64_t)ttl_s * 1000u;
+
+    if (end > 0x7FFFFFFFu) {
+        return 0x7FFFFFFFu;
+    }
+    return (uint32_t)end;
+}
+
+static void dns_cache_put(struct w5500_dns *d, const w5500_dns_addr_t *addr,
+                          uint32_t now)
+{
+    dns_cache_entry_t *e;
+    size_t n = strlen(d->name);
+
+    if (n == 0u || n >= sizeof(e->name) || addr->ttl_s == 0u) {
+        return;
+    }
+    e = &d->cache[d->cache_slot];
+    d->cache_slot = (uint8_t)((d->cache_slot + 1u) % DNS_CACHE_SLOTS);
+    memset(e, 0, sizeof(*e));
+    strcpy(e->name, d->name);
+    memcpy(e->ip, addr->ip, 4u);
+    e->expire = dns_expire(now, addr->ttl_s);
+    e->used = 1u;
+}
+
+static int dns_cache_get(struct w5500_dns *d, uint32_t now,
+                         w5500_dns_addr_t *out)
+{
+    uint8_t i;
+
+    if (!d->cache_on) {
+        return 0;
+    }
+    for (i = 0u; i < DNS_CACHE_SLOTS; i++) {
+        dns_cache_entry_t *e = &d->cache[i];
+        if (!e->used || !dns_name_eq(e->name, d->name)) {
+            continue;
+        }
+        if ((int32_t)(e->expire - now) <= 0) {
+            e->used = 0u;
+            continue;
+        }
+        memcpy(out->ip, e->ip, 4u);
+        out->ttl_s = (uint32_t)((e->expire - now) / 1000u);
+        return 1;
+    }
+    return 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -227,18 +459,15 @@ size_t w5500_dns_size(void)
     return sizeof(struct w5500_dns);
 }
 
-w5500_result_t w5500_dns_init(w5500_dns_t **out_dns,
-                              void *mem,
-                              size_t mem_size,
-                              w5500_handle_t chip,
-                              const uint8_t server[4],
-                              w5500_dns_cb_t cb,
-                              void *user_arg)
+static w5500_result_t dns_init_common(w5500_dns_t **out_dns,
+                                      void *mem, size_t mem_size,
+                                      w5500_handle_t chip,
+                                      const uint8_t server[4],
+                                      void *user_arg)
 {
     struct w5500_dns *d;
 
-    if (out_dns == NULL || mem == NULL || chip == NULL || server == NULL ||
-        cb == NULL) {
+    if (out_dns == NULL || mem == NULL || chip == NULL || server == NULL) {
         return W5500_ERR_PARAM;
     }
     if (mem_size < sizeof(*d)) {
@@ -248,11 +477,74 @@ w5500_result_t w5500_dns_init(w5500_dns_t **out_dns,
     memset(d, 0, sizeof(*d));
     d->chip = chip;
     memcpy(d->server, server, 4u);
-    d->cb = cb;
     d->user = user_arg;
     d->state = DNS_STATE_OFF;
     *out_dns = d;
     return W5500_OK;
+}
+
+w5500_result_t w5500_dns_init(w5500_dns_t **out_dns,
+                              void *mem,
+                              size_t mem_size,
+                              w5500_handle_t chip,
+                              const uint8_t server[4],
+                              w5500_dns_cb_t cb,
+                              void *user_arg)
+{
+    struct w5500_dns *d = NULL;
+    w5500_result_t rc;
+
+    if (cb == NULL) {
+        return W5500_ERR_PARAM;
+    }
+    rc = dns_init_common(&d, mem, mem_size, chip, server, user_arg);
+    if (rc != W5500_OK) {
+        return rc;
+    }
+    d->cb = cb;
+    *out_dns = d;
+    return W5500_OK;
+}
+
+w5500_result_t w5500_dns_init_multi(w5500_dns_t **out_dns,
+                                    void *mem,
+                                    size_t mem_size,
+                                    w5500_handle_t chip,
+                                    const uint8_t server[4],
+                                    w5500_dns_multi_cb_t cb,
+                                    void *user_arg)
+{
+    struct w5500_dns *d = NULL;
+    w5500_result_t rc;
+
+    if (cb == NULL) {
+        return W5500_ERR_PARAM;
+    }
+    rc = dns_init_common(&d, mem, mem_size, chip, server, user_arg);
+    if (rc != W5500_OK) {
+        return rc;
+    }
+    d->multi_cb = cb;
+    *out_dns = d;
+    return W5500_OK;
+}
+
+void w5500_dns_set_cache(w5500_dns_t *dns, uint8_t enable)
+{
+    if (dns == NULL) {
+        return;
+    }
+    dns->cache_on = (enable != 0u) ? 1u : 0u;
+    if (!dns->cache_on) {
+        dns_cache_clear(dns);
+    }
+}
+
+void w5500_dns_cache_clear(w5500_dns_t *dns)
+{
+    if (dns != NULL) {
+        dns_cache_clear(dns);
+    }
 }
 
 w5500_result_t w5500_dns_set_server(w5500_dns_t *dns, const uint8_t server[4])
@@ -261,6 +553,7 @@ w5500_result_t w5500_dns_set_server(w5500_dns_t *dns, const uint8_t server[4])
         return W5500_ERR_PARAM;
     }
     memcpy(dns->server, server, 4u);
+    dns_cache_clear(dns);
     return W5500_OK;
 }
 
@@ -275,6 +568,20 @@ w5500_result_t w5500_dns_start(w5500_dns_t *dns, const char *name,
         return W5500_ERR_PARAM;
     }
 
+    memset(dns->name, 0, sizeof(dns->name));
+    strncpy(dns->name, name, sizeof(dns->name) - 1u);
+
+    if (dns->cache_on) {
+        w5500_dns_addr_t cached;
+
+        if (dns_cache_get(dns, now_ms, &cached)) {
+            dns->cache_hit = cached;
+            dns->from_cache = 1u;
+            dns->state = DNS_STATE_WAITING;
+            return W5500_OK;
+        }
+    }
+
     if (dns->sock == NULL) {
         rc = w5500_socket_open(dns->chip, W5500_PROTO_UDP, DNS_LOCAL_PORT,
                                dns_noop_cb, dns, &dns->sock);
@@ -283,9 +590,6 @@ w5500_result_t w5500_dns_start(w5500_dns_t *dns, const char *name,
             return rc;
         }
     }
-
-    memset(dns->name, 0, sizeof(dns->name));
-    strncpy(dns->name, name, sizeof(dns->name) - 1u);
 
     dns->qid_counter = dns->qid_counter * 1664525u + 1013904223u;
     dns->qid = (uint16_t)(dns->qid_counter >> 16);
@@ -312,6 +616,10 @@ w5500_result_t w5500_dns_poll(w5500_dns_t *dns, uint32_t now_ms)
     if (dns->state != DNS_STATE_WAITING) {
         return W5500_ERR_STATE;
     }
+    if (dns->from_cache) {
+        dns_finish(dns, &dns->cache_hit, 1u, W5500_OK);
+        return W5500_OK;
+    }
 
     while (packets < 4u) {
         uint16_t n = 0u;
@@ -327,15 +635,25 @@ w5500_result_t w5500_dns_poll(w5500_dns_t *dns, uint32_t now_ms)
             ((((uint16_t)dns->rx[0] << 8) | dns->rx[1]) == dns->qid)) {
             uint16_t flags = (uint16_t)(((uint16_t)dns->rx[2] << 8) |
                                         dns->rx[3]);
-            uint8_t ip[4];
 
             if ((flags & 0x8000u) != 0u && (flags & 0x000Fu) != 0u) {
-                dns_finish(dns, NULL, W5500_ERR_STATE); /* NXDOMAIN / SERVFAIL */
+                dns_finish(dns, NULL, 0u, W5500_ERR_STATE); /* NXDOMAIN */
                 return W5500_OK;
             }
-            if (w5500_dns_parse_response(dns->rx, n, dns->qid, ip) == 0) {
-                dns_finish(dns, ip, W5500_OK);
-                return W5500_OK;
+            {
+                w5500_dns_addr_t addrs[W5500_DNS_MAX_ADDRS];
+                uint8_t count = 0u;
+
+                if (w5500_dns_parse_response_ex(dns->rx, n, dns->qid,
+                                                dns->name, addrs,
+                                                (uint8_t)W5500_DNS_MAX_ADDRS,
+                                                &count) == 0 && count > 0u) {
+                    if (dns->cache_on) {
+                        dns_cache_put(dns, &addrs[0], now_ms);
+                    }
+                    dns_finish(dns, addrs, count, W5500_OK);
+                    return W5500_OK;
+                }
             }
         }
         packets++;
@@ -347,14 +665,14 @@ w5500_result_t w5500_dns_poll(w5500_dns_t *dns, uint32_t now_ms)
         w5500_result_t rc;
 
         if (dns->attempts >= DNS_MAX_ATTEMPTS) {
-            dns_finish(dns, NULL, W5500_ERR_TIMEOUT);
+            dns_finish(dns, NULL, 0u, W5500_ERR_TIMEOUT);
             return W5500_OK;
         }
         len = dns_build_query(dns);
         rc = w5500_socket_sendto(dns->sock, dns->server, DNS_SERVER_PORT,
                                  dns->tx, len, &sent);
         if (rc != W5500_OK && rc != W5500_ERR_BUSY) {
-            dns_finish(dns, NULL, rc);
+            dns_finish(dns, NULL, 0u, rc);
             return W5500_OK;
         }
         dns->t_last = now_ms;
@@ -373,4 +691,5 @@ void w5500_dns_stop(w5500_dns_t *dns)
         dns->sock = NULL;
     }
     dns->state = DNS_STATE_OFF;
+    dns->from_cache = 0u;
 }

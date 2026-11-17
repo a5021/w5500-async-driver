@@ -67,5 +67,36 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     if (w5500_dns_parse_response(data, (uint16_t)size, qid, NULL) != -1) {
         abort();
     }
+
+    /* Extended codec: CNAME-aware, multi-address, caller-supplied name. */
+    if (size > 0u && size <= 0xFFFFu) {
+        char want[64];
+        w5500_dns_addr_t addrs[W5500_DNS_MAX_ADDRS];
+        w5500_dns_addr_t addrs2[W5500_DNS_MAX_ADDRS];
+        uint8_t count = 0xFFu;
+        uint8_t count2 = 0xFFu;
+        size_t n = size % (sizeof(want) - 1u);
+        int rc2;
+
+        memcpy(want, data, n);
+        want[n] = '\0';
+        rc2 = w5500_dns_parse_response_ex(data, (uint16_t)size, qid, want,
+                                          addrs, W5500_DNS_MAX_ADDRS, &count);
+        if (rc2 != 0 && rc2 != -1) {
+            abort();
+        }
+        if (rc2 == 0 && count > W5500_DNS_MAX_ADDRS) {
+            abort();
+        }
+        if (w5500_dns_parse_response_ex(data, (uint16_t)size, qid, want,
+                                        addrs2, W5500_DNS_MAX_ADDRS,
+                                        &count2) != rc2 ||
+            count != count2 ||
+            (rc2 == 0 &&
+             memcmp(addrs, addrs2,
+                    (size_t)count * sizeof(addrs[0])) != 0)) {
+            abort(); /* deterministic */
+        }
+    }
     return 0;
 }

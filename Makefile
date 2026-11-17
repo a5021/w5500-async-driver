@@ -88,12 +88,17 @@ $(BUILD)/test_mqtt.exe: $(CORE_SRC) tests/test_mqtt.c tests/mock_w5500.c | $(BUI
 	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests $(CORE_SRC) tests/test_mqtt.c \
 	    tests/mock_w5500.c -o $@
 
-test: $(BUILD)/test_w5500.exe $(BUILD)/test_protocols.exe $(BUILD)/test_modbus.exe $(BUILD)/test_http.exe $(BUILD)/test_mqtt.exe
+$(BUILD)/test_dns_ex.exe: $(CORE_SRC) tests/test_dns_ex.c tests/mock_w5500.c | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Itests $(CORE_SRC) tests/test_dns_ex.c \
+	    tests/mock_w5500.c -o $@
+
+test: $(BUILD)/test_w5500.exe $(BUILD)/test_protocols.exe $(BUILD)/test_modbus.exe $(BUILD)/test_http.exe $(BUILD)/test_mqtt.exe $(BUILD)/test_dns_ex.exe
 	./$(BUILD)/test_w5500.exe
 	./$(BUILD)/test_protocols.exe
 	./$(BUILD)/test_modbus.exe
 	./$(BUILD)/test_http.exe
 	./$(BUILD)/test_mqtt.exe
+	./$(BUILD)/test_dns_ex.exe
 
 # Firmware examples are syntax-checked only: the STM32 port needs no vendor
 # headers, so the same sources compile on the host. The emulator demos are

@@ -6,6 +6,10 @@ versioning: [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- DNS resolver upgrades: CNAME chain following, up to four A records per
+  answer with TTL (`w5500_dns_init_multi()`), and an opt-in four-entry answer
+  cache (`w5500_dns_set_cache()`, `w5500_dns_cache_clear()`). The legacy
+  callback API and default (no cache) behaviour are unchanged.
 - MQTT 3.1.1 client (`w5500_mqtt.h`): QoS 0 publish/subscribe over one TCP
   socket, caller-owned storage, tick-driven poll, keepalive PINGREQ and
   auto-reconnect on link loss; codec and state-machine fuzzing

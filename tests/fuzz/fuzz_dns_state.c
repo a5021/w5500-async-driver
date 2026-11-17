@@ -76,6 +76,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         g_resolver == NULL) {
         abort();
     }
+    if ((data[0] & 2u) != 0u) {
+        w5500_dns_set_cache(g_resolver, 1u);
+    }
     if (w5500_dns_start(g_resolver, "example.com", now) != W5500_OK) {
         abort();
     }

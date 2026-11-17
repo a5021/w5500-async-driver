@@ -27,6 +27,15 @@ extern "C" {
 /** DNS resolver instance; opaque, lives in caller storage. */
 typedef struct w5500_dns w5500_dns_t;
 
+/** Maximum number of A records delivered for one query. */
+#define W5500_DNS_MAX_ADDRS 4u
+
+/** One resolved address and its remaining TTL. */
+typedef struct {
+    uint8_t  ip[4];   /**< IPv4 address */
+    uint32_t ttl_s;   /**< TTL in seconds (0 = do not cache) */
+} w5500_dns_addr_t;
+
 /**
  * @brief Result callback (always called exactly once per started query).
  * @param status  W5500_OK (ip valid), W5500_ERR_TIMEOUT (no answer after
@@ -36,6 +45,17 @@ typedef void (*w5500_dns_cb_t)(w5500_dns_t *dns,
                                const uint8_t ip[4],
                                w5500_result_t status,
                                void *user_arg);
+/**
+ * @brief Callback variant that receives every A record and its TTL.
+ *
+ * CNAME chains are followed, so @p addrs may hold records for the canonical
+ * name. On error @p count is 0 and @p addrs is NULL.
+ */
+typedef void (*w5500_dns_multi_cb_t)(w5500_dns_t *dns,
+                                     const w5500_dns_addr_t *addrs,
+                                     uint8_t count,
+                                     w5500_result_t status,
+                                     void *user_arg);
 
 /** Bytes required for one resolver instance. */
 size_t w5500_dns_size(void);
@@ -51,6 +71,25 @@ w5500_result_t w5500_dns_init(w5500_dns_t **out_dns,
                               const uint8_t server[4],
                               w5500_dns_cb_t cb,
                               void *user_arg);
+/**
+ * @brief Like w5500_dns_init(), but delivers all A records and their TTLs.
+ */
+w5500_result_t w5500_dns_init_multi(w5500_dns_t **out_dns,
+                                    void *mem,
+                                    size_t mem_size,
+                                    w5500_handle_t chip,
+                                    const uint8_t server[4],
+                                    w5500_dns_multi_cb_t cb,
+                                    void *user_arg);
+/**
+ * @brief Enable or disable the small answer cache (disabled by default).
+ *
+ * Cached answers are delivered from the next w5500_dns_poll() call. Entries
+ * expire by TTL; changing the server clears them.
+ */
+void w5500_dns_set_cache(w5500_dns_t *dns, uint8_t enable);
+/** Drop all cached answers. */
+void w5500_dns_cache_clear(w5500_dns_t *dns);
 
 /** Change the server address (takes effect on the next query). */
 w5500_result_t w5500_dns_set_server(w5500_dns_t *dns, const uint8_t server[4]);

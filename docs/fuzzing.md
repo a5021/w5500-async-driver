@@ -16,7 +16,7 @@ Sixteen libFuzzer harnesses run against the chip emulator
 | `fuzz-context` | `init`/`init_static`/`deinit` with a 0xA5 canary | nothing is written when `mem_size < context_size`; the canary survives `deinit` |
 | `fuzz-spi-frame` | `w5500_ctrl_byte`, the emulator frame decoder, full write->read frames | exact `(BSB<<3)\|(RWB<<2)\|OM` layout, select->addr->ctrl->data->deselect framing |
 | `fuzz-dhcp` | DHCP reply decoder (`w5500_dhcp_parse_packet`) on arbitrary bytes | no OOB, option and cookie bounds, message type != 0 on success, lease inside the clamp range, deterministic |
-| `fuzz-dns` | DNS response decoder (`w5500_dns_parse_response`) including compression pointers | no OOB and no pointer loops, `ip_out` untouched on failure, replies accepted only with a matching id |
+| `fuzz-dns` | DNS response codecs: legacy first-A decoder and CNAME-aware multi-A decoder (`w5500_dns_parse_response_ex`) with compression pointers and a caller-supplied name | no OOB and no pointer loops, output untouched on failure, a matching id required, deterministic multi-A decode |
 | `fuzz-dhcp-state` | a live DHCP client: injections, clock steps, stop/start | BOUND/RENEWED implies the lease is applied to the chip, FAILED implies a closed socket, poll after stop returns `ERR_STATE`, lock balance |
 | `fuzz-dns-state` | a live DNS resolver: replies, clock steps, re-queries | exactly one callback per query, idle state inside the callback, callbacks never outnumber starts |
 | `fuzz-sntp` | SNTP decoder (`w5500_sntp_parse_response`) on arbitrary bytes | no OOB, server mode only, zero timestamp rejected, output untouched on failure, deterministic |
