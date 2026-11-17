@@ -123,6 +123,51 @@ static uint16_t build_cname_reply(uint8_t *b, uint16_t qid, uint32_t ttl)
     return off;
 }
 
+static uint16_t build_a_reply(uint8_t *b, uint16_t qid, const char *name,
+                              const uint8_t ip[4], uint32_t ttl)
+{
+    const char *p = name;
+    uint16_t off = 12u;
+
+    memset(b, 0, 512u);
+    b[0] = (uint8_t)(qid >> 8);
+    b[1] = (uint8_t)qid;
+    b[2] = 0x81u;
+    b[3] = 0x80u;
+    b[5] = 1u; /* QDCOUNT */
+    b[7] = 1u; /* ANCOUNT */
+    while (*p != '\0') {
+        const char *dot = strchr(p, '.');
+        size_t n = (dot != NULL) ? (size_t)(dot - p) : strlen(p);
+        b[off++] = (uint8_t)n;
+        memcpy(b + off, p, n);
+        off = (uint16_t)(off + n);
+        p += n;
+        if (*p == '.') {
+            p++;
+        }
+    }
+    b[off++] = 0u;
+    b[off++] = 0u;
+    b[off++] = 1u; /* QTYPE A */
+    b[off++] = 0u;
+    b[off++] = 1u; /* QCLASS IN */
+    /* Compression pointer to the question name at offset 12. */
+    b[off++] = 0xC0u;
+    b[off++] = 0x0Cu;
+    b[off++] = 0u;
+    b[off++] = 1u; /* A */
+    b[off++] = 0u;
+    b[off++] = 1u; /* IN */
+    put32(b + off, ttl);
+    off = (uint16_t)(off + 4u);
+    b[off++] = 0u;
+    b[off++] = 4u; /* RDLENGTH */
+    memcpy(b + off, ip, 4u);
+    off = (uint16_t)(off + 4u);
+    return off;
+}
+
 static void test_codec(void)
 {
     uint8_t pkt[512];
@@ -245,6 +290,106 @@ static void test_cache_and_multi(void)
     CHECK_EQ(g_mock.lock_count, g_mock.unlock_count);
 }
 
+static void test_cache_long_name(void)
+{
+    static uint8_t mem[4096];
+    w5500_handle_t h = fixture_open();
+    w5500_dns_t *d = NULL;
+    static const uint8_t server[4] = {8, 8, 8, 8};
+    static const uint8_t ip[4] = {1, 2, 3, 4};
+    uint8_t pkt[512];
+    uint16_t qid, len;
+    char longname[132];
+
+    /* 131-char name (exceeds the old 128-byte cache name buffer): 63 a's,
+       dot, 63 b's, dot, "com". */
+    memset(longname, 'a', 63);
+    longname[63] = '.';
+    memset(longname + 64, 'b', 63);
+    longname[127] = '.';
+    memcpy(longname + 128, "com", 3);
+    longname[131] = '\0';
+
+    CHECK_EQ(w5500_dns_init_multi(&d, mem, sizeof(mem), h, server, multi_cb,
+                                  NULL), W5500_OK);
+    w5500_dns_set_cache(d, 1u);
+    g_calls = 0u;
+
+    CHECK_EQ(w5500_dns_start(d, longname, 0u), W5500_OK);
+    qid = sent_qid();
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    len = build_a_reply(pkt, qid, longname, ip, 60u);
+    mock_w5500_inject_rx(0, pkt, len);
+    CHECK_EQ(w5500_dns_poll(d, 0u), W5500_OK);
+    CHECK_EQ(g_calls, 1u);
+    CHECK_EQ(g_count, 1u);
+    CHECK_EQ(g_ttl, 60u);
+    CHECK_EQ(memcmp(g_ips[0], ip, 4), 0);
+
+    /* Long names (>127 chars) resolve but are not cached: a fresh query goes
+       on the wire each time (qid changes). */
+    qid = sent_qid();
+    CHECK_EQ(w5500_dns_start(d, longname, 1000u), W5500_OK);
+    CHECK(sent_qid() != qid);
+    CHECK_EQ(w5500_dns_poll(d, 1000u), W5500_OK);
+    CHECK_EQ(g_calls, 1u); /* no callback until the new reply arrives */
+
+    len = build_a_reply(pkt, sent_qid(), longname, ip, 60u);
+    mock_w5500_inject_rx(0, pkt, len);
+    CHECK_EQ(w5500_dns_poll(d, 1000u), W5500_OK);
+    CHECK_EQ(g_calls, 2u);
+    CHECK_EQ(memcmp(g_ips[0], ip, 4), 0);
+
+    w5500_dns_stop(d);
+    w5500_deinit(h);
+    CHECK_EQ(g_mock.lock_count, g_mock.unlock_count);
+}
+
+static void test_cache_subsecond_ttl(void)
+{
+    static uint8_t mem[4096];
+    w5500_handle_t h = fixture_open();
+    w5500_dns_t *d = NULL;
+    static const uint8_t server[4] = {8, 8, 8, 8};
+    static const uint8_t ip[4] = {1, 2, 3, 4};
+    uint8_t pkt[512];
+    uint16_t qid1, qid2, len;
+    char name[] = "short.example.com";
+
+    CHECK_EQ(w5500_dns_init_multi(&d, mem, sizeof(mem), h, server, multi_cb,
+                                  NULL), W5500_OK);
+    w5500_dns_set_cache(d, 1u);
+    g_calls = 0u;
+
+    /* TTL 60s cached at time 0. */
+    CHECK_EQ(w5500_dns_start(d, name, 0u), W5500_OK);
+    qid1 = sent_qid();
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    len = build_a_reply(pkt, qid1, name, ip, 60u);
+    mock_w5500_inject_rx(0, pkt, len);
+    CHECK_EQ(w5500_dns_poll(d, 0u), W5500_OK);
+    CHECK_EQ(g_calls, 1u);
+    CHECK_EQ(g_count, 1u);
+
+    /* 59.5s later: remaining TTL 500ms < 1s -> treated as expired, fresh
+       query on the wire (never report ttl_s == 0). */
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(w5500_dns_start(d, name, 59500u), W5500_OK);
+    qid2 = sent_qid();
+    CHECK(qid2 != qid1);
+    CHECK_EQ(w5500_dns_poll(d, 59500u), W5500_OK);
+    CHECK_EQ(g_calls, 1u); /* no callback until the new reply arrives */
+
+    len = build_a_reply(pkt, qid2, name, ip, 60u);
+    mock_w5500_inject_rx(0, pkt, len);
+    CHECK_EQ(w5500_dns_poll(d, 59500u), W5500_OK);
+    CHECK_EQ(g_calls, 2u);
+
+    w5500_dns_stop(d);
+    w5500_deinit(h);
+    CHECK_EQ(g_mock.lock_count, g_mock.unlock_count);
+}
+
 static void test_init_validation(void)
 {
     static uint8_t mem[4096];
@@ -265,6 +410,8 @@ int main(void)
 {
     test_codec();
     test_cache_and_multi();
+    test_cache_long_name();
+    test_cache_subsecond_ttl();
     test_init_validation();
     if (g_failures == 0) {
         printf("OK: all dns_ex tests passed\n");

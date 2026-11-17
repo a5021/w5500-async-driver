@@ -578,6 +578,31 @@ static void test_open_timeout_stuck_cr(void)
     w5500_deinit(h);
 }
 
+static void test_close_timeout_releases_slot(void)
+{
+    w5500_handle_t h = fixture_open();
+    w5500_socket_t s = NULL;
+
+    /* Open a working socket first. */
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5000u, evt_cb, NULL, &s),
+             W5500_OK);
+    CHECK(s != NULL);
+
+    /* Make Sn_CR stick so close() times out. */
+    g_mock.cr_stuck = 1u;
+    CHECK_EQ(w5500_socket_close(s), W5500_ERR_TIMEOUT);
+    g_mock.cr_stuck = 0u;
+
+    /* The slot must have been released despite the timeout: a fresh open
+       must still succeed instead of returning ERR_NOMEM. */
+    CHECK_EQ(w5500_poll(h), W5500_OK);
+    CHECK_EQ(w5500_socket_open(h, W5500_PROTO_TCP, 5000u, evt_cb, NULL, &s),
+             W5500_OK);
+    CHECK(s != NULL);
+    CHECK_EQ(w5500_socket_close(s), W5500_OK);
+    w5500_deinit(h);
+}
+
 static void test_open_rejects_bad_args(void)
 {
     w5500_handle_t h = fixture_open();
@@ -1019,6 +1044,7 @@ int main(void)
     test_send_done_recovery();
     test_poll_read_budget();
     test_open_timeout_stuck_cr();
+    test_close_timeout_releases_slot();
     test_open_rejects_bad_args();
     test_tcp_client_flow();
     test_tcp_connect_fail();

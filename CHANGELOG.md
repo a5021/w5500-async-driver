@@ -52,6 +52,9 @@ versioning: [Semantic Versioning](https://semver.org/).
   coverage artifact.
 
 ### Fixed
+- `w5500_socket_close()` no longer leaks a socket slot when the chip does not
+  accept the CLOSE command (timeout); the slot is always released, so all four
+  sockets stay available.
 - SNTP replies whose transmit timestamp converts to Unix time 0 are now
   rejected instead of completing the request with an epoch callback.
 - Data followed by a peer FIN is no longer lost: the driver keeps the socket

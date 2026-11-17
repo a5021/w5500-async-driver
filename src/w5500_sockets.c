@@ -198,6 +198,13 @@ w5500_result_t w5500_socket_close(w5500_socket_t sock)
         if (h->stats != NULL) {
             h->stats->socket_closes++;
         }
+    } else {
+        /* Timeout / chip error: release the slot anyway so the caller does
+           not lose all four sockets after a few failed closes. */
+        w5500_sock_release(sock);
+        if (h->stats != NULL) {
+            h->stats->timeouts++;
+        }
     }
     w5500_unlock(h);
     return rc;
@@ -516,6 +523,9 @@ w5500_result_t w5500_socket_recvfrom(w5500_socket_t sock,
                                (uint16_t)(rd));
             if (rc == W5500_OK) {
                 rc = w5500_sn_exec_cmd(h, sock->id, W5500_Sn_CR_RECV);
+            }
+            if (h->stats != NULL) {
+                h->stats->datagrams_received++;
             }
             w5500_unlock(h);
             return rc;

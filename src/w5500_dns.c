@@ -17,8 +17,8 @@
 #define DNS_LOCAL_PORT     53535u
 #define DNS_RETRY_MS       2000u
 #define DNS_MAX_ATTEMPTS   3u
-#define DNS_CACHE_SLOTS    4u
 #define DNS_CACHE_NAME_LEN 128u
+#define DNS_CACHE_SLOTS    4u
 #define DNS_NAME_MAX       254u
 
 #define DNS_STATE_OFF      0u
@@ -440,6 +440,11 @@ static int dns_cache_get(struct w5500_dns *d, uint32_t now,
             continue;
         }
         if ((int32_t)(e->expire - now) <= 0) {
+            e->used = 0u;
+            continue;
+        }
+        if ((e->expire - now) < 1000u) {
+            /* Less than a second left: never report ttl_s == 0. */
             e->used = 0u;
             continue;
         }
