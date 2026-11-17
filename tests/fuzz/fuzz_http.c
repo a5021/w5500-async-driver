@@ -47,9 +47,10 @@ static void make_token(uint8_t *dst, size_t cap, const uint8_t *src, size_t n)
     dst[n] = 0u;
 }
 
+/* A zero-length body may point one past the end, which is still valid. */
 static int in_buf(const uint8_t *p, const uint8_t *buf, size_t len)
 {
-    return p == NULL || (p >= buf && p < buf + len);
+    return p == NULL || (p >= buf && p <= buf + len);
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
