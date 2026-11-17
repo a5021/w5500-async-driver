@@ -34,13 +34,17 @@ static void make_token(uint8_t *dst, size_t cap, const uint8_t *src, size_t n)
 {
     size_t i;
 
-    make_str(dst, cap, src, n);
-    for (i = 0u; dst[i] != 0u; i++) {
-        if (dst[i] == ' ' || dst[i] == '\r' || dst[i] == '\n' ||
-            dst[i] == '\t') {
-            dst[i] = 'x';
-        }
+    if (n > cap - 1u) {
+        n = cap - 1u;
     }
+    for (i = 0u; i < n; i++) {
+        uint8_t c = src[i];
+        if (c == 0u || c == ' ' || c == '\r' || c == '\n' || c == '\t') {
+            c = 'x';
+        }
+        dst[i] = c;
+    }
+    dst[n] = 0u;
 }
 
 static int in_buf(const uint8_t *p, const uint8_t *buf, size_t len)
