@@ -1,8 +1,10 @@
 # Fuzzing the W5500 driver
 
-Seventeen libFuzzer harnesses run against the chip emulator
-(`tests/mock_w5500.c`) with ASan/UBSan. Every property is checked with
-`abort()`, so libFuzzer stops and stores the failing input as a normal crash.
+Seventeen libFuzzer harnesses run with ASan/UBSan. Core, socket and state
+harnesses run against the chip emulator (`tests/mock_w5500.c`); codec-only
+harnesses feed the protocol parsers/builders directly. Every property is
+checked with `abort()`, so libFuzzer stops and stores the failing input as a
+normal crash.
 
 ## Harnesses
 

@@ -1,7 +1,8 @@
 # Protocol layers
 
-DHCP, DNS, SNTP and Modbus TCP are separate modules on top of the socket API.
-They follow the same contract:
+DHCP, DNS, SNTP, Modbus TCP and MQTT are separate modules on top of the socket
+API. The HTTP codec is a message parser/builder with no socket dependency.
+The socket-based modules follow the same contract:
 
 - **Caller-owned storage**: `<module>_size()` tells how many bytes an instance
   needs; `_init(&ptr, mem, size, ...)` places all state and packet buffers
@@ -15,14 +16,17 @@ They follow the same contract:
   A DHCP client keeps its socket for the whole lease lifetime, and DNS/SNTP
   resolvers keep theirs open between queries for reuse. If all four slots are
   needed for applications, stop the protocol instances you do not need:
-  `w5500_dhcp_stop()`, `w5500_dns_stop()`, `w5500_sntp_stop()` release their
-  socket. A Modbus server with four listeners occupies the entire pool.
+  `w5500_dhcp_stop()`, `w5500_dns_stop()`, `w5500_sntp_stop()` and
+  `w5500_mqtt_stop()` release their socket. A Modbus server with four
+  listeners occupies the entire pool. The HTTP codec uses no socket.
 
 | Module | Sockets used | Ports | Timebase |
 |--------|--------------|-------|----------|
 | DHCP client | 1 (local 68) | 68 -> 67 | 4 s retries |
 | DNS resolver | 1 (local 53535) | -> 53 | 2 s retries |
 | SNTP client | 1 (local 53536) | -> 123 | 2 s retries |
+| MQTT client | 1 (ephemeral) | 1883 by convention | 5 s connect, keepalive PINGREQ |
+| HTTP codec | 0 | none | no timebase |
 | Modbus server | 1..4 listeners | 502 (configurable) | event driven |
 | Modbus client | 1 | configurable | 2 s resend, 4 s timeout |
 
@@ -37,6 +41,9 @@ for (;;) {
     }
     if (sntp_active) {
         w5500_sntp_poll(sntp, now_ms);
+    }
+    if (mqtt_active) {
+        w5500_mqtt_poll(mqtt, now_ms);
     }
     w5500_modbus_server_poll(server); /* or: modbus_client_poll(cli, now_ms) */
     now_ms += 5;                      /* or read a hardware tick */
@@ -93,7 +100,7 @@ own schedule.
 
 - 48-byte mode-3 request from local port 53536 to server port 123.
 - A reply is accepted only when the mode is 4 (server), the stratum is not 0
-  and the transmit timestamp is non-zero.
+  (LI is not 3) and the transmit timestamp converts to a positive Unix time.
 - The callback receives Unix time: `ntp_seconds - 2208988800`.
 - Retries: every 2 s, three transmissions; `ERR_TIMEOUT` otherwise.
 

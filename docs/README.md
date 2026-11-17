@@ -7,11 +7,12 @@ its tests are in `src/`, `include/` and `tests/`.
 | Stage | Status | Description |
 |-------|--------|-------------|
 | 1 | done | Driver core, register map, asynchronous socket API, STM32 bare-metal port, FreeRTOS port, unit tests with a chip emulator |
-| 2 | done | Fuzzing: 7 libFuzzer harnesses, corpus/dictionary, CI (host-tests + fuzz) |
+| 2 | done | Fuzzing: 17 libFuzzer harnesses, corpus/dictionary, CI (host-tests + fuzz) |
 | 3 | done | Core hardening: SIR-based polling and `w5500_irq_pending()`, link events, VERSIONR+RTR chip probe, `open_ex` flags, TTL/TOS/MSS/status/keep-alive probe, `ERR_BUSY` for an in-flight SEND, RTR/RCR tuning, `delay_us` |
 | 4 | done | Per-socket buffer layout (`w5500_set_socket_buffers`), zero-length UDP semantics, link-recovery example and error-code table |
 | 5 | done | Protocol layer: DHCP client, DNS resolver, plus `fuzz-dhcp`/`fuzz-dns` |
 | 6 | done | Modbus TCP: server (FC 3/4/6/16, up to 4 clients, register map via callbacks) and polling client, `fuzz-modbus`, example checked in CI |
+| 7 | done | SNTP client, MQTT client, DNS CNAME/multi-A/cache, core HTTP codec, optional diagnostics, CMake/CTest build |
 
 ## Specifications
 
@@ -23,8 +24,8 @@ its tests are in `src/`, `include/` and `tests/`.
 - [architecture.md](architecture.md) - three-layer design, execution model,
   locking, polling, timeouts, design invariants.
 - [api.md](api.md) - API reference grouped by module.
-- [protocols.md](protocols.md) - DHCP, DNS, SNTP, Modbus TCP and MQTT usage:
-  lifecycle, timing, storage and integration recipes.
+- [protocols.md](protocols.md) - DHCP, DNS, SNTP, Modbus TCP and MQTT usage
+  plus the socket-free HTTP codec: lifecycle, timing, storage and recipes.
 - [fuzzing.md](fuzzing.md) - harnesses, corpus and dictionary, run modes,
   CI and the nightly campaign.
 - [tests/mock_w5500.md](../tests/mock_w5500.md) - the W5500 emulator used by

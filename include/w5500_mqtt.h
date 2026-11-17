@@ -2,9 +2,10 @@
  * @file w5500_mqtt.h
  * @brief Minimal MQTT 3.1.1 client (QoS 0) for the async W5500 driver.
  *
- * One TCP socket, caller-owned state, tick-driven, no heap. The client
- * auto-reconnects with PINGREQ keepalive and reports inbound PUBLISH
- * messages through a callback. No TLS, QoS 1/2 or retained publishing.
+ * One TCP socket, caller-owned state, tick-driven, no heap. PINGREQ keeps an
+ * established session alive; after a disconnect the caller must call
+ * w5500_mqtt_connect() again. Inbound PUBLISH arrives through a callback.
+ * No TLS, QoS 1/2 or retained publishing.
  */
 #ifndef W5500_MQTT_H
 #define W5500_MQTT_H

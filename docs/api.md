@@ -97,7 +97,7 @@ Unknown bits or protocol/flag mismatches return `ERR_PARAM`.
 
 | Function | Purpose | Notes |
 |----------|---------|-------|
-| `w5500_socket_send(sock, data, len, &sent)` | TCP send | Partial; `BAD` cases above; `ERR_BUSY` while a SEND is in flight |
+| `w5500_socket_send(sock, data, len, &sent)` | TCP send | Partial; needs an established socket and non-empty data; `ERR_BUSY` while a SEND is in flight |
 | `w5500_socket_sendto(sock, ip, port, data, len, &sent)` | UDP datagram | Same rules |
 | `w5500_socket_recv(sock, buf, len, &recvd)` | Receive | Non-blocking; `recvd == 0` when empty |
 | `w5500_socket_recvfrom(sock, buf, len, &recvd, ip, port)` | Receive + peer latch | Peer filled before data is consumed |
@@ -264,5 +264,6 @@ alias the input buffer and stay valid only while that buffer is alive.
 
 `w5500_http_response_t` carries `status`, `reason`/`reason_len`,
 `headers`/`headers_len`, `body`/`body_len` and a `truncated` flag set when
-`Content-Length` exceeds the available bytes. Scope: no TLS, chunked
-encoding, keep-alive or POST.
+`Content-Length` exceeds the available bytes. `w5500_http_request_t` carries
+`method`/`method_len` and `path`/`path_len`. Scope: no TLS, chunked encoding,
+keep-alive or POST.

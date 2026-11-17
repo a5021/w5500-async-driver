@@ -326,8 +326,8 @@ chunked encoding, keep-alive or POST.
 - [docs/architecture.md](docs/architecture.md) - layers, execution model,
   locking, polling and timeout semantics, design invariants.
 - [docs/api.md](docs/api.md) - API reference by module.
-- [docs/protocols.md](docs/protocols.md) - DHCP, DNS, SNTP, Modbus TCP and
-  MQTT: lifecycle, timing, storage and integration recipes.
+- [docs/protocols.md](docs/protocols.md) - DHCP, DNS, SNTP, Modbus TCP, MQTT
+  and the HTTP codec: lifecycle, timing, storage and integration recipes.
 - [docs/fuzzing.md](docs/fuzzing.md) - harnesses, corpus, run modes, CI.
 - [docs/README.md](docs/README.md) - stage tracker and document index.
 - [examples/README.md](examples/README.md) - what each example demonstrates.
@@ -339,11 +339,12 @@ chunked encoding, keep-alive or POST.
 | Stage | Status | Description |
 |-------|--------|-------------|
 | 1 | done | Core + async sockets + STM32/FreeRTOS ports + tests |
-| 2 | done | Fuzzing: 7 harnesses, corpus/dictionary, CI |
+| 2 | done | Fuzzing: 17 harnesses, corpus/dictionary, CI |
 | 3 | done | Link events, INTn/SIR polling, `open_ex` flags, `ERR_BUSY`, RTR/RCR, `delay_us` |
 | 4 | done | Per-socket buffers, zero-length UDP, link-recovery example |
 | 5 | done | DHCP/DNS as a separate layer |
 | 6 | done | Modbus TCP server/client + fuzzing |
+| 7 | done | SNTP, MQTT, DNS CNAME/cache, core HTTP codec, diagnostics, CMake/CTest |
 
 See [docs/README.md](docs/README.md).
 Stage 1 specification: [docs/stages/stage1.md](docs/stages/stage1.md).
